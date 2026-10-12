@@ -137,13 +137,19 @@ class _Miniatura extends StatelessWidget {
         border: Border.all(color: context.hairline),
       ),
       clipBehavior: Clip.antiAlias,
-      child: calcado.temImagem
-          ? Image.network(
-              calcado.imagemUrl!,
+      child: !calcado.temImagem
+          ? fallback
+          : calcado.imagemBytes != null
+          ? Image.memory(
+              calcado.imagemBytes!,
               fit: BoxFit.cover,
               errorBuilder: (_, __, ___) => fallback,
             )
-          : fallback,
+          : Image.network(
+              calcado.imagemUrl!,
+              fit: BoxFit.cover,
+              errorBuilder: (_, __, ___) => fallback,
+            ),
     );
   }
 }

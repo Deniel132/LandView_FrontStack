@@ -1,11 +1,11 @@
-import 'dart:typed_data';
-
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../models/calcado.dart';
 import '../services/api_service.dart';
 import '../theme/app_theme.dart';
 import '../utils/formato.dart';
+import '../widgets/logo_loja.dart';
 
 /// Cria (POST) ou edita (PUT) um modelo de calçado. A própria tela chama a
 /// API: se der erro, a mensagem aparece aqui e o que foi digitado é mantido.
@@ -24,6 +24,7 @@ class _CadastroPageState extends State<CadastroPage> {
   final _nomeController = TextEditingController();
   final _marcaController = TextEditingController();
   final _precoController = TextEditingController();
+  final _estoqueController = TextEditingController(text: '0');
   final _imagemController = TextEditingController();
 
   XFile? _arquivoImagem;
@@ -47,7 +48,9 @@ class _CadastroPageState extends State<CadastroPage> {
       _nomeController.text = c.nome;
       _marcaController.text = c.marca;
       _precoController.text = c.preco.toStringAsFixed(2).replaceAll('.', ',');
+      _estoqueController.text = c.estoque.toString();
       _imagemController.text = c.imagemUrl ?? '';
+      _imagemPreview = ApiService.modoDemo ? c.imagemBytes : null;
       _tipo = c.tipo;
       _forma = c.forma;
       _tamanhos.addAll(c.tamanhos);
@@ -59,6 +62,7 @@ class _CadastroPageState extends State<CadastroPage> {
     _nomeController.dispose();
     _marcaController.dispose();
     _precoController.dispose();
+    _estoqueController.dispose();
     _imagemController.dispose();
     super.dispose();
   }
@@ -144,6 +148,9 @@ class _CadastroPageState extends State<CadastroPage> {
     try {
       final imagemUrl = _arquivoImagem == null
           ? _imagemController.text.trim()
+          // Sem backend, conserva a foto selecionada em memória no próprio app.
+          : ApiService.modoDemo
+          ? null
           : await ApiService.instance.enviarImagem(
               _imagemPreview!,
               _arquivoImagem!.name,
@@ -155,7 +162,9 @@ class _CadastroPageState extends State<CadastroPage> {
         tipo: _tipo,
         forma: _forma,
         preco: Formato.lerNumero(_precoController.text)!,
+        estoque: int.parse(_estoqueController.text),
         imagemUrl: imagemUrl,
+        imagemBytes: ApiService.modoDemo ? _imagemPreview : null,
         tamanhos: List.of(_tamanhos),
       );
 
@@ -182,7 +191,10 @@ class _CadastroPageState extends State<CadastroPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text(_editando ? 'Editar modelo' : 'Novo modelo')),
+      appBar: AppBar(
+        title: Text(_editando ? 'Editar modelo' : 'Novo modelo'),
+        actions: const [MarcaAppBar()],
+      ),
       body: Center(
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 560),
@@ -244,6 +256,30 @@ class _CadastroPageState extends State<CadastroPage> {
                         },
                       ),
                       const SizedBox(height: 16),
+                      TextFormField(
+                        controller: _estoqueController,
+                        keyboardType: TextInputType.number,
+                        textInputAction: TextInputAction.next,
+                        inputFormatters: [
+                          FilteringTextInputFormatter.digitsOnly,
+                        ],
+                        decoration: const InputDecoration(
+                          labelText: 'Quantidade em estoque',
+                          hintText: '0',
+                          prefixIcon: Icon(Icons.inventory_2_outlined),
+                        ),
+                        validator: (v) {
+                          final quantidade = int.tryParse((v ?? '').trim());
+                          if (quantidade == null) {
+                            return 'Informe uma quantidade válida';
+                          }
+                          if (quantidade < 0) {
+                            return 'O estoque não pode ser negativo';
+                          }
+                          return null;
+                        },
+                      ),
+                      const SizedBox(height: 16),
                       if (_imagemPreview != null) ...[
                         ClipRRect(
                           borderRadius: BorderRadius.circular(AppTheme.radius),
@@ -264,16 +300,18 @@ class _CadastroPageState extends State<CadastroPage> {
                           ),
                         ),
                         const SizedBox(height: 8),
-                        Text(
-                          _arquivoImagem!.name,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: context.textMuted,
+                        if (_arquivoImagem != null) ...[
+                          Text(
+                            _arquivoImagem!.name,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: context.textMuted,
+                            ),
                           ),
-                        ),
-                        const SizedBox(height: 8),
+                          const SizedBox(height: 8),
+                        ],
                       ],
                       OutlinedButton.icon(
                         onPressed: _salvando ? null : _selecionarImagem,
