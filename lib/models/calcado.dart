@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 /// Tipo do calçado. O `valor` é exatamente o texto que a API usa no JSON.
 enum TipoCalcado {
   tenis('tenis', 'Tênis'),
@@ -7,8 +9,10 @@ enum TipoCalcado {
   final String rotulo;
   const TipoCalcado(this.valor, this.rotulo);
 
-  static TipoCalcado doValor(String? v) =>
-      TipoCalcado.values.firstWhere((t) => t.valor == v, orElse: () => TipoCalcado.tenis);
+  static TipoCalcado doValor(String? v) => TipoCalcado.values.firstWhere(
+    (t) => t.valor == v,
+    orElse: () => TipoCalcado.tenis,
+  );
 }
 
 /// Forma do calçado: define se ele calça mais justo ou mais folgado
@@ -23,14 +27,13 @@ enum FormaCalcado {
   final String descricao;
   const FormaCalcado(this.valor, this.rotulo, this.descricao);
 
-  static FormaCalcado doValor(String? v) =>
-      FormaCalcado.values.firstWhere((f) => f.valor == v, orElse: () => FormaCalcado.padrao);
+  static FormaCalcado doValor(String? v) => FormaCalcado.values.firstWhere(
+    (f) => f.valor == v,
+    orElse: () => FormaCalcado.padrao,
+  );
 }
 
-/// Uma linha da tabela de medidas de um modelo de calçado.
-///
-/// O comprimento é a medida interna do calçado, em centímetros, usada como
-/// dado de entrada para o cálculo de recomendação feito pela API.
+/// Uma linha da tabela de medidas: numeração e comprimento interno em cm.
 class MedidaTamanho {
   final double numeracao;
   final double comprimentoCm;
@@ -38,20 +41,17 @@ class MedidaTamanho {
   const MedidaTamanho({required this.numeracao, required this.comprimentoCm});
 
   factory MedidaTamanho.fromJson(Map<String, dynamic> json) => MedidaTamanho(
-        numeracao: (json['numeracao'] as num).toDouble(),
-        comprimentoCm: (json['comprimento_cm'] as num).toDouble(),
-      );
+    numeracao: (json['numeracao'] as num).toDouble(),
+    comprimentoCm: (json['comprimento_cm'] as num).toDouble(),
+  );
 
   Map<String, dynamic> toJson() => {
-        'numeracao': numeracao,
-        'comprimento_cm': comprimentoCm,
-      };
+    'numeracao': numeracao,
+    'comprimento_cm': comprimentoCm,
+  };
 }
 
-/// Representa um modelo de calçado cadastrado no catálogo.
-///
-/// Também converte os dados entre o formato Dart usado pela interface e o
-/// JSON definido em [API_CONTRATO.md].
+/// Modelo de calçado vendido pela loja (recurso do CRUD).
 class Calcado {
   final int? id; // nulo até a API criar o registro
   final String nome;
@@ -60,6 +60,9 @@ class Calcado {
   final FormaCalcado forma;
   final double preco;
   final String? imagemUrl;
+  // Bytes permitem pré-visualizar e reutilizar fotos locais no modo demo.
+  final Uint8List? imagemBytes;
+  final int estoque; // unidades disponíveis
   final List<MedidaTamanho> tamanhos;
 
   const Calcado({
@@ -70,16 +73,36 @@ class Calcado {
     required this.forma,
     required this.preco,
     this.imagemUrl,
+    this.imagemBytes,
+    this.estoque = 0,
     this.tamanhos = const [],
   });
 
-  bool get temImagem => imagemUrl != null && imagemUrl!.trim().isNotEmpty;
+  bool get temImagem =>
+      imagemBytes != null ||
+      (imagemUrl != null && imagemUrl!.trim().isNotEmpty);
+
+  bool get temImagemUrl => imagemUrl != null && imagemUrl!.trim().isNotEmpty;
+
+  Calcado copyWith({int? estoque}) => Calcado(
+    id: id,
+    nome: nome,
+    marca: marca,
+    tipo: tipo,
+    forma: forma,
+    preco: preco,
+    imagemUrl: imagemUrl,
+    imagemBytes: imagemBytes,
+    estoque: estoque ?? this.estoque,
+    tamanhos: tamanhos,
+  );
 
   factory Calcado.fromJson(Map<String, dynamic> json) {
-    final tabela = ((json['tamanhos'] as List?) ?? [])
-        .map((e) => MedidaTamanho.fromJson(e as Map<String, dynamic>))
-        .toList()
-      ..sort((a, b) => a.numeracao.compareTo(b.numeracao));
+    final tabela =
+        ((json['tamanhos'] as List?) ?? [])
+            .map((e) => MedidaTamanho.fromJson(e as Map<String, dynamic>))
+            .toList()
+          ..sort((a, b) => a.numeracao.compareTo(b.numeracao));
 
     return Calcado(
       id: json['id'] as int?,
@@ -89,18 +112,20 @@ class Calcado {
       forma: FormaCalcado.doValor(json['forma'] as String?),
       preco: (json['preco'] as num).toDouble(),
       imagemUrl: json['imagem_url'] as String?,
+      estoque: (json['estoque'] as num?)?.toInt() ?? 0,
       tamanhos: tabela,
     );
   }
 
   /// Corpo enviado em POST/PUT. O `id` não vai: ele vem da URL.
   Map<String, dynamic> toJson() => {
-        'nome': nome,
-        'marca': marca,
-        'tipo': tipo.valor,
-        'forma': forma.valor,
-        'preco': preco,
-        'imagem_url': temImagem ? imagemUrl!.trim() : null,
-        'tamanhos': tamanhos.map((t) => t.toJson()).toList(),
-      };
+    'nome': nome,
+    'marca': marca,
+    'tipo': tipo.valor,
+    'forma': forma.valor,
+    'preco': preco,
+    'imagem_url': temImagemUrl ? imagemUrl!.trim() : null,
+    'estoque': estoque,
+    'tamanhos': tamanhos.map((t) => t.toJson()).toList(),
+  };
 }
