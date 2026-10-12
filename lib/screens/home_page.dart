@@ -4,6 +4,7 @@ import '../models/calcado.dart';
 import '../services/api_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/cartao_calcado.dart';
+import '../widgets/logo_loja.dart';
 import 'cadastro_page.dart';
 import 'detalhe_page.dart';
 
@@ -120,7 +121,7 @@ class _HomePageState extends State<HomePage> {
               width: 40,
               height: 40,
               decoration: BoxDecoration(
-                color: AppColors.grass,
+                color: AppColors.brand,
                 borderRadius: BorderRadius.circular(10),
               ),
               child: const Icon(Icons.straighten_rounded, color: Colors.white, size: 22),
@@ -160,7 +161,7 @@ class _HomePageState extends State<HomePage> {
               MyApp.themeNotifier.value = isDark ? ThemeMode.light : ThemeMode.dark;
             },
           ),
-          const SizedBox(width: 8),
+          const MarcaAppBar(),
         ],
         bottom: PreferredSize(
           preferredSize: const Size.fromHeight(1),
@@ -237,7 +238,7 @@ class _HomePageState extends State<HomePage> {
         label: Text(rotulo),
         selected: _filtroTipo == tipo,
         showCheckmark: false,
-        selectedColor: AppColors.grass.withValues(alpha: 0.16),
+        selectedColor: AppColors.brand.withValues(alpha: 0.16),
         side: BorderSide(color: context.hairline),
         onSelected: (_) => setState(() => _filtroTipo = tipo),
       ),
@@ -292,7 +293,7 @@ class _PainelCatalogo extends StatelessWidget {
   Widget build(BuildContext context) {
     final (Color corStatus, String textoStatus) = switch (status) {
       _StatusApi.conectando => (AppColors.hazard, 'Conectando…'),
-      _StatusApi.online => (AppColors.grassLight, 'API conectada'),
+      _StatusApi.online => (AppColors.brandLight, 'API conectada'),
       _StatusApi.offline => (AppColors.danger, 'Sem conexão'),
     };
 
@@ -311,7 +312,7 @@ class _PainelCatalogo extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Container(height: 3, color: AppColors.grass),
+          Container(height: 3, color: AppColors.brand),
           Padding(
             padding: const EdgeInsets.fromLTRB(22, 18, 22, 16),
             child: Column(

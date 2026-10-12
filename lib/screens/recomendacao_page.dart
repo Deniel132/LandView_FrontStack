@@ -5,6 +5,7 @@ import '../services/api_service.dart';
 import '../theme/app_theme.dart';
 import '../utils/formato.dart';
 import '../widgets/pilula.dart';
+import '../widgets/logo_loja.dart';
 
 /// Fluxo principal do vendedor: informa a medida do pé e a numeração que o
 /// cliente costuma usar. O cálculo NÃO é feito aqui: o app envia os dados
@@ -74,7 +75,10 @@ class _RecomendacaoPageState extends State<RecomendacaoPage> {
     final c = widget.calcado;
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Recomendar tamanho')),
+      appBar: AppBar(
+        title: const Text('Recomendar tamanho'),
+        actions: const [MarcaAppBar()],
+      ),
       body: Center(
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 560),
@@ -233,7 +237,7 @@ class _PainelResultado extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Container(height: 3, color: AppColors.grass),
+          Container(height: 3, color: AppColors.brand),
           Padding(
             padding: const EdgeInsets.fromLTRB(22, 20, 22, 20),
             child: Column(

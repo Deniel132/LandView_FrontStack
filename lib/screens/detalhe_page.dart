@@ -4,6 +4,7 @@ import '../services/api_service.dart';
 import '../theme/app_theme.dart';
 import '../utils/formato.dart';
 import '../widgets/pilula.dart';
+import '../widgets/logo_loja.dart';
 import 'cadastro_page.dart';
 import 'recomendacao_page.dart';
 
@@ -19,13 +20,66 @@ class DetalhePage extends StatefulWidget {
 
 class _DetalhePageState extends State<DetalhePage> {
   bool _ocupado = false;
+  late Calcado _calcado;
 
-  Calcado get _c => widget.calcado;
+  Calcado get _c => _calcado;
+
+  @override
+  void initState() {
+    super.initState();
+    _calcado = widget.calcado;
+  }
 
   void _recomendar() {
-    Navigator.of(context).push(
-      MaterialPageRoute(builder: (_) => RecomendacaoPage(calcado: _c)),
+    Navigator.of(
+      context,
+    ).push(MaterialPageRoute(builder: (_) => RecomendacaoPage(calcado: _c)));
+  }
+
+  Future<void> _registrarVenda() async {
+    if (_c.estoque == 0) return;
+    final calcadoId = _c.id;
+    if (calcadoId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Salve o produto antes de registrar uma venda.'),
+        ),
+      );
+      return;
+    }
+    final quantidade = await showDialog<int>(
+      context: context,
+      builder: (_) => _DialogoVenda(calcado: _c),
     );
+    if (quantidade == null || !mounted) return;
+
+    setState(() => _ocupado = true);
+    try {
+      final venda = await ApiService.instance.registrarVenda(
+        calcadoId: calcadoId,
+        quantidade: quantidade,
+      );
+      if (!mounted) return;
+      setState(() {
+        _calcado = _c.copyWith(estoque: venda.estoqueAtual);
+        _ocupado = false;
+      });
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(
+          SnackBar(
+            content: Text(
+              'Venda registrada: $quantidade ${quantidade == 1 ? 'unidade' : 'unidades'} de ${_c.nome}.',
+            ),
+          ),
+        );
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      setState(() => _ocupado = false);
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(e.mensagem)));
+    }
   }
 
   /// A tela de edição devolve uma mensagem; repassamos para a home,
@@ -42,7 +96,9 @@ class _DetalhePageState extends State<DetalhePage> {
     final confirmou = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppTheme.radiusLg)),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(AppTheme.radiusLg),
+        ),
         title: const Text(
           'Excluir modelo',
           style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
@@ -60,7 +116,10 @@ class _DetalhePageState extends State<DetalhePage> {
             onPressed: () => Navigator.of(ctx).pop(true),
             child: const Text(
               'Excluir',
-              style: TextStyle(color: AppColors.danger, fontWeight: FontWeight.w600),
+              style: TextStyle(
+                color: AppColors.danger,
+                fontWeight: FontWeight.w600,
+              ),
             ),
           ),
         ],
@@ -76,7 +135,9 @@ class _DetalhePageState extends State<DetalhePage> {
     } on ApiException catch (e) {
       if (!mounted) return;
       setState(() => _ocupado = false);
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.mensagem)));
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(e.mensagem)));
     }
   }
 
@@ -91,7 +152,7 @@ class _DetalhePageState extends State<DetalhePage> {
             tooltip: 'Editar modelo',
             onPressed: _ocupado ? null : _editar,
           ),
-          const SizedBox(width: 8),
+          const MarcaAppBar(),
         ],
       ),
       body: Center(
@@ -124,7 +185,10 @@ class _DetalhePageState extends State<DetalhePage> {
                   ),
                 ),
                 const SizedBox(height: 4),
-                Text(_c.marca, style: TextStyle(fontSize: 15, color: context.textMuted)),
+                Text(
+                  _c.marca,
+                  style: TextStyle(fontSize: 15, color: context.textMuted),
+                ),
                 const SizedBox(height: 18),
                 Container(
                   decoration: BoxDecoration(
@@ -135,8 +199,17 @@ class _DetalhePageState extends State<DetalhePage> {
                   clipBehavior: Clip.antiAlias,
                   child: Column(
                     children: [
-                      _LinhaFicha(rotulo: 'Preço', valor: Formato.real(_c.preco), destaque: true),
+                      _LinhaFicha(
+                        rotulo: 'Preço',
+                        valor: Formato.real(_c.preco),
+                        destaque: true,
+                      ),
                       _LinhaFicha(rotulo: 'Forma', valor: _c.forma.descricao),
+                      _LinhaFicha(
+                        rotulo: 'Estoque disponível',
+                        valor:
+                            '${_c.estoque} ${_c.estoque == 1 ? 'unidade' : 'unidades'}',
+                      ),
                       _LinhaFicha(
                         rotulo: 'Numerações cadastradas',
                         valor: '${_c.tamanhos.length}',
@@ -164,12 +237,38 @@ class _DetalhePageState extends State<DetalhePage> {
                   Wrap(
                     spacing: 8,
                     runSpacing: 8,
-                    children: [for (final t in _c.tamanhos) _TileMedida(medida: t)],
+                    children: [
+                      for (final t in _c.tamanhos) _TileMedida(medida: t),
+                    ],
                   ),
                 const SizedBox(height: 26),
                 SizedBox(
                   height: 54,
                   child: ElevatedButton.icon(
+                    onPressed: _ocupado || _c.estoque == 0
+                        ? null
+                        : _registrarVenda,
+                    icon: _ocupado
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Colors.white,
+                            ),
+                          )
+                        : const Icon(Icons.point_of_sale_outlined, size: 20),
+                    label: Text(
+                      _c.estoque == 0
+                          ? 'Sem estoque para vender'
+                          : 'Registrar venda',
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 10),
+                SizedBox(
+                  height: 52,
+                  child: OutlinedButton.icon(
                     onPressed: _ocupado ? null : _recomendar,
                     icon: const Icon(Icons.straighten_rounded, size: 20),
                     label: const Text('Recomendar tamanho'),
@@ -191,7 +290,9 @@ class _DetalhePageState extends State<DetalhePage> {
                     onPressed: _ocupado ? null : _excluir,
                     style: OutlinedButton.styleFrom(
                       foregroundColor: AppColors.danger,
-                      side: BorderSide(color: AppColors.danger.withValues(alpha: 0.4)),
+                      side: BorderSide(
+                        color: AppColors.danger.withValues(alpha: 0.4),
+                      ),
                     ),
                     icon: _ocupado
                         ? const SizedBox(
@@ -212,6 +313,87 @@ class _DetalhePageState extends State<DetalhePage> {
   }
 }
 
+class _DialogoVenda extends StatefulWidget {
+  final Calcado calcado;
+
+  const _DialogoVenda({required this.calcado});
+
+  @override
+  State<_DialogoVenda> createState() => _DialogoVendaState();
+}
+
+class _DialogoVendaState extends State<_DialogoVenda> {
+  int _quantidade = 1;
+
+  @override
+  Widget build(BuildContext context) {
+    final calcado = widget.calcado;
+
+    return AlertDialog(
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(AppTheme.radiusLg),
+      ),
+      title: const Text('Registrar venda'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            calcado.nome,
+            style: const TextStyle(fontWeight: FontWeight.w600),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            '${calcado.estoque} ${calcado.estoque == 1 ? 'unidade disponível' : 'unidades disponíveis'}',
+            style: TextStyle(color: context.textMuted),
+          ),
+          const SizedBox(height: 18),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              IconButton(
+                tooltip: 'Diminuir quantidade',
+                onPressed: _quantidade > 1
+                    ? () => setState(() => _quantidade--)
+                    : null,
+                icon: const Icon(Icons.remove_circle_outline),
+              ),
+              SizedBox(
+                width: 56,
+                child: Text(
+                  '$_quantidade',
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    fontSize: 24,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+              IconButton(
+                tooltip: 'Aumentar quantidade',
+                onPressed: _quantidade < calcado.estoque
+                    ? () => setState(() => _quantidade++)
+                    : null,
+                icon: const Icon(Icons.add_circle_outline),
+              ),
+            ],
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Cancelar'),
+        ),
+        ElevatedButton(
+          onPressed: () => Navigator.of(context).pop(_quantidade),
+          child: const Text('Confirmar venda'),
+        ),
+      ],
+    );
+  }
+}
+
 class _Imagem extends StatelessWidget {
   final Calcado calcado;
   const _Imagem({required this.calcado});
@@ -226,20 +408,28 @@ class _Imagem extends StatelessWidget {
 
     return Container(
       decoration: BoxDecoration(
-        color: context.isDark ? Colors.white.withValues(alpha: 0.04) : Colors.white,
+        color: context.isDark
+            ? Colors.white.withValues(alpha: 0.04)
+            : Colors.white,
         borderRadius: BorderRadius.circular(AppTheme.radiusLg),
         border: Border.all(color: context.hairline),
       ),
       clipBehavior: Clip.antiAlias,
       child: AspectRatio(
         aspectRatio: 16 / 10,
-        child: calcado.temImagem
-            ? Image.network(
-                calcado.imagemUrl!,
+        child: !calcado.temImagem
+            ? fallback
+            : calcado.imagemBytes != null
+            ? Image.memory(
+                calcado.imagemBytes!,
                 fit: BoxFit.contain,
                 errorBuilder: (_, __, ___) => fallback,
               )
-            : fallback,
+            : Image.network(
+                calcado.imagemUrl!,
+                fit: BoxFit.contain,
+                errorBuilder: (_, __, ___) => fallback,
+              ),
       ),
     );
   }
@@ -299,12 +489,17 @@ class _LinhaFicha extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 15),
       decoration: BoxDecoration(
-        border: ultima ? null : Border(bottom: BorderSide(color: context.hairline)),
+        border: ultima
+            ? null
+            : Border(bottom: BorderSide(color: context.hairline)),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(rotulo, style: TextStyle(fontSize: 14, color: context.textMuted)),
+          Text(
+            rotulo,
+            style: TextStyle(fontSize: 14, color: context.textMuted),
+          ),
           const SizedBox(width: 16),
           Expanded(
             child: Text(
