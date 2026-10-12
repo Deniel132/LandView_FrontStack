@@ -1,28 +1,60 @@
 # Contrato da API — Provador Virtual (Automatize)
 
-Este documento descreve o que o **app Flutter espera** da API FastAPI.
-Se o backend mudar algo aqui, avisar quem faz o app (ou ajustar `lib/models/` e `lib/services/api_service.dart`).
+O que o **app Flutter espera** da API FastAPI. Se o backend mudar algo aqui, avisar quem faz o app
+(ou ajustar `lib/models/` e `lib/services/api_service.dart`).
 
 - Base URL local: `http://localhost:8000`
 - Formato: JSON (UTF-8)
 - **Sem barra no final** das rotas (`/calcados`, não `/calcados/`). Com barra o FastAPI responde 307 e o POST/PUT pode falhar no app.
-- Recurso do CRUD: **Calçado** (modelo de tênis/chuteira da loja). Não é recurso "usuário", então não exige JWT.
+- **Todas as rotas, exceto `/auth/login`, exigem token** (veja "Autenticação").
+
+## Autenticação (JWT)
+
+### POST `/auth/login`
+
+Pedido:
+
+```json
+{ "email": "vendedor@loja.com", "senha": "minha-senha" }
+```
+
+Resposta `200`:
+
+```json
+{
+  "access_token": "eyJhbGciOiJIUzI1NiIs...",
+  "token_type": "bearer",
+  "usuario": { "id": 1, "nome": "Maria Souza", "email": "vendedor@loja.com" }
+}
+```
+
+Credenciais erradas: `401` com `{ "detail": "E-mail ou senha incorretos." }` (a mensagem aparece na tela de login).
+
+### Rotas protegidas
+
+O app envia `Authorization: Bearer <access_token>` em todas as outras rotas.
+Token ausente, inválido ou vencido: `401` com `{ "detail": "Token inválido ou expirado." }`.
+Ao receber 401 em rota protegida, o app **volta sozinho para a tela de login**.
+
+Requisitos do enunciado: senhas salvas com **bcrypt** e token com expiração. O app não tem tela de
+cadastro de usuário: crie as contas por script de seed ou pelo Swagger (`/docs`).
 
 ## Objeto `Calcado`
 
 ```json
 {
-  "id": 1,
-  "nome": "Mercurial Vapor 15",
+  "id": 3,
+  "nome": "Air Zoom Pegasus 40",
   "marca": "Nike",
-  "tipo": "chuteira",
-  "forma": "estreita",
-  "preco": 899.9,
-  "imagem_url": "https://exemplo.com/foto.jpg",
+  "tipo": "tenis",
+  "forma": "padrao",
+  "preco": 799.9,
+  "estoque": 4,
+  "imagem_url": null,
   "tamanhos": [
-    { "numeracao": 40, "comprimento_cm": 25.6 },
-    { "numeracao": 41, "comprimento_cm": 26.3 },
-    { "numeracao": 42, "comprimento_cm": 27.0 }
+    { "numeracao": 40, "comprimento_cm": 26.9 },
+    { "numeracao": 41, "comprimento_cm": 27.6 },
+    { "numeracao": 42, "comprimento_cm": 28.2 }
   ]
 }
 ```
@@ -35,12 +67,14 @@ Se o backend mudar algo aqui, avisar quem faz o app (ou ajustar `lib/models/` e 
 | `tipo` | string | `"tenis"` ou `"chuteira"` (sem acento) |
 | `forma` | string | `"estreita"`, `"padrao"` ou `"larga"` (sem acento) |
 | `preco` | number | maior que 0 |
+| `estoque` | int | unidades disponíveis; 0 ou mais (se ausente, o app assume 0) |
 | `imagem_url` | string ou null | opcional |
 | `tamanhos` | lista | pelo menos 1 item; `numeracao` aceita decimal (41.5) |
 
 `comprimento_cm` é o **comprimento interno** do calçado naquela numeração, em centímetros.
+Deve crescer junto com a numeração.
 
-## Endpoints
+## Endpoints do CRUD
 
 | Método | Rota | Corpo | Resposta de sucesso |
 |---|---|---|---|
@@ -49,48 +83,92 @@ Se o backend mudar algo aqui, avisar quem faz o app (ou ajustar `lib/models/` e 
 | POST | `/calcados` | `Calcado` sem `id` | `201` `Calcado` com `id` |
 | PUT | `/calcados/{id}` | `Calcado` sem `id` | `200` `Calcado` atualizado |
 | DELETE | `/calcados/{id}` | — | `204` (ou `200`) |
-| POST | `/recomendacoes` | ver abaixo | `200` recomendação |
-| POST | `/imagens` | `multipart/form-data`, campo `arquivo` | `200` com `imagem_url` |
+| POST | `/vendas` | `calcado_id`, `quantidade` | `201` registro da venda |
 
-### POST `/imagens` — envio de foto do dispositivo
+### POST `/vendas` — registrar venda e baixar estoque
 
-O Flutter permite selecionar uma foto JPG, PNG ou WebP de até 5 MB. A foto é
-enviada separadamente do cadastro como `multipart/form-data`; não é convertida
-em texto Base64 dentro do JSON do calçado. Isso evita aumentar o tamanho do
-payload e permite que o backend controle onde os arquivos ficam armazenados.
+O app envia o ID do calçado que está aberto na tela de detalhes e a quantidade
+confirmada pelo vendedor. A API deve, em uma única transação, conferir o estoque,
+criar o registro da venda e subtrair a quantidade do estoque. Assim a venda fica
+associada ao produto correto e também alimenta `mais_vendidos` e `vendas_30_dias`
+do dashboard. Não usar o endpoint de edição do catálogo para registrar vendas.
 
-Requisição (exemplo):
-
-```bash
-curl -X POST http://localhost:8000/imagens \
-  -F "arquivo=@tenis.jpg"
-```
-
-Resposta:
+Pedido:
 
 ```json
 {
-  "imagem_url": "/uploads/tenis-identificador.jpg"
+  "calcado_id": 3,
+  "quantidade": 2
 }
 ```
 
-`imagem_url` pode ser um caminho relativo servido pelo mesmo host da API ou
-uma URL absoluta. O app transforma caminhos relativos em URLs usando `API_URL`.
-O backend deve validar o conteúdo real e o tamanho do arquivo, armazenar a
-imagem de forma persistente e disponibilizá-la por HTTP. Em FastAPI, o endpoint
-multipart requer a dependência `python-multipart`; para desenvolvimento, os
-arquivos podem ser servidos por uma rota estática de `/uploads`.
+Resposta `201`:
 
-Depois do upload, o app usa a URL retornada no campo `imagem_url` do cadastro
-JSON de `/calcados`. Assim, a imagem não depende do caminho local do celular ou
-computador que a selecionou. O campo existente de URL continua disponível como
-alternativa, sem upload.
+```json
+{
+  "id": 42,
+  "calcado_id": 3,
+  "quantidade": 2,
+  "estoque_atual": 2,
+  "data_venda": "2026-10-06T20:00:00Z"
+}
+```
 
-**Importante:** esta rota ainda precisa ser implementada na API Python. Se ela
-não existir, o app mostrará o erro do servidor e não concluirá o cadastro com
-a foto; cadastrar sem foto ou informar uma URL continua usando os endpoints
-atuais. Como o upload ocorre antes do cadastro, o backend pode futuramente
-limpar imagens que não estejam vinculadas a um calçado.
+A API deve rejeitar quantidade menor que 1 ou maior que o estoque disponível.
+Para estoque insuficiente, retornar `400` com `detail` claro; para calçado
+inexistente, `404`. A baixa do estoque precisa ser atômica para impedir que duas
+vendas concorrentes deixem o estoque negativo. A rota exige autenticação JWT.
+
+### POST `/imagens`
+
+O cadastro pode enviar uma foto separadamente do JSON do calçado. A rota recebe
+`multipart/form-data` no campo `arquivo` e responde com `{ "imagem_url": "..." }`.
+O Flutter limita a seleção a JPG, PNG ou WebP de até 5 MB; o backend também deve
+validar o conteúdo e o tamanho e servir a imagem em uma URL persistente.
+Caminhos relativos são resolvidos com a URL base da API.
+
+## Dashboard
+
+### GET `/dashboard`
+
+Alimenta a tela inicial do app. O cálculo é todo do backend; o app só exibe.
+
+```json
+{
+  "resumo": {
+    "total_modelos": 8,
+    "unidades_em_estoque": 186,
+    "vendas_30_dias": 85,
+    "modelos_acabando": 2,
+    "modelos_com_excesso": 2,
+    "limite_estoque_baixo": 5,
+    "limite_estoque_alto": 40
+  },
+  "mais_vendidos": [
+    { "id": 3, "nome": "Air Zoom Pegasus 40", "marca": "Nike", "vendas": 19, "estoque": 4 }
+  ],
+  "estoque_baixo": [
+    { "id": 5, "nome": "Wave Rider 27", "marca": "Mizuno", "vendas": 16, "estoque": 2 }
+  ],
+  "estoque_alto": [
+    { "id": 6, "nome": "Ultraboost Light", "marca": "Adidas", "vendas": 5, "estoque": 55 }
+  ]
+}
+```
+
+Regras sugeridas (o app mostra os limites que a API devolver em `resumo`):
+
+- `mais_vendidos`: os 5 modelos com mais vendas nos últimos 30 dias, do maior para o menor.
+- `estoque_baixo`: modelos com `estoque <= limite_estoque_baixo`, do menor estoque para o maior.
+- `estoque_alto`: modelos com `estoque >= limite_estoque_alto`, do maior estoque para o menor.
+- `vendas` em cada item = unidades vendidas nos últimos 30 dias.
+
+Para o dashboard refletir as vendas reais, o backend precisa persistir cada
+registro recebido em `POST /vendas` e calcular os totais dos últimos 30 dias a
+partir desses registros. O modo de demonstração do Flutter simula essas baixas
+e vendas em memória; os dados somem ao fechar o app.
+
+## Recomendação de tamanho
 
 ### POST `/recomendacoes`
 
@@ -98,8 +176,8 @@ Pedido:
 
 ```json
 {
-  "calcado_id": 1,
-  "medida_pe_cm": 26.2,
+  "calcado_id": 3,
+  "medida_pe_cm": 26.5,
   "numeracao_habitual": 41,
   "marca_habitual": "Adidas"
 }
@@ -113,16 +191,18 @@ Resposta:
 {
   "tamanho_recomendado": 41,
   "alternativa": 42,
-  "folga_cm": 0.7,
-  "observacao": "Forma estreita: se o cliente tem o pé largo, considere o 42."
+  "folga_cm": 1.1,
+  "observacao": null
 }
 ```
 
-`alternativa`, `folga_cm` e `observacao` podem vir `null`/ausentes. O que o app mostra ao vendedor é `tamanho_recomendado` em destaque e o resto como apoio.
+`alternativa`, `folga_cm` e `observacao` podem vir `null`/ausentes. O app mostra
+`tamanho_recomendado` em destaque e o resto como apoio.
 
 ## Erros
 
-O app lê o campo `detail` do FastAPI e mostra a mensagem na tela. Use o padrão:
+O app lê o campo `detail` e mostra a mensagem direto na tela, então ela deve estar em português e
+ser clara. Padrão:
 
 ```json
 { "detail": "Calçado não encontrado." }
@@ -130,11 +210,11 @@ O app lê o campo `detail` do FastAPI e mostra a mensagem na tela. Use o padrão
 
 | Situação | Status |
 |---|---|
+| credenciais erradas no login | `401` |
+| token ausente, inválido ou vencido | `401` |
 | id inexistente (GET/PUT/DELETE/recomendação) | `404` |
-| corpo inválido | `422` (formato padrão do Pydantic; o app já trata) |
+| corpo inválido | `422` (formato padrão do Pydantic ou `detail` em texto; o app trata os dois) |
 | regra de negócio violada | `400` com `detail` em texto claro |
-
-Mensagens em português e claras, porque aparecem direto para o vendedor.
 
 ## CORS (só se o app rodar como Flutter Web)
 
@@ -145,7 +225,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],   # em desenvolvimento
     allow_methods=["*"],
-    allow_headers=["*"],
+    allow_headers=["*"],   # inclui Authorization
 )
 ```
 
@@ -154,14 +234,18 @@ Para celular físico ou emulador, subir o servidor com `uvicorn app.main:app --h
 ## Testes rápidos (curl)
 
 ```bash
-# criar
-curl -X POST http://localhost:8000/calcados -H "Content-Type: application/json" \
-  -d '{"nome":"Mercurial Vapor 15","marca":"Nike","tipo":"chuteira","forma":"estreita","preco":899.9,"tamanhos":[{"numeracao":41,"comprimento_cm":26.3}]}'
+# login (guarde o access_token)
+curl -X POST http://localhost:8000/auth/login -H "Content-Type: application/json" \
+  -d '{"email":"vendedor@loja.com","senha":"minha-senha"}'
 
-# listar
-curl http://localhost:8000/calcados
+# listar (com token)
+curl http://localhost:8000/calcados -H "Authorization: Bearer SEU_TOKEN"
+
+# dashboard
+curl http://localhost:8000/dashboard -H "Authorization: Bearer SEU_TOKEN"
 
 # recomendar
-curl -X POST http://localhost:8000/recomendacoes -H "Content-Type: application/json" \
-  -d '{"calcado_id":1,"medida_pe_cm":26.2,"numeracao_habitual":41}'
+curl -X POST http://localhost:8000/recomendacoes \
+  -H "Content-Type: application/json" -H "Authorization: Bearer SEU_TOKEN" \
+  -d '{"calcado_id":3,"medida_pe_cm":26.5,"numeracao_habitual":41}'
 ```
