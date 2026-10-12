@@ -1,21 +1,30 @@
 # Aplicativo Flutter — Provador Virtual
 
-Aplicativo para consultar um catálogo de tênis e chuteiras, manter os modelos
-cadastrados e solicitar uma recomendação de tamanho. A interface Flutter é o
-cliente; a futura API em Python será responsável por persistir o catálogo e
-calcular a recomendação.
+Aplicativo Flutter para autenticação de vendedores, consulta do painel da loja,
+manutenção do catálogo de tênis e chuteiras e recomendação de tamanho. A API
+FastAPI persiste os dados e calcula as recomendações; o app também oferece um
+modo de demonstração em memória para apresentar as telas sem backend.
+
+Este diretório contém somente o aplicativo Flutter: não há servidor nem
+implementação da API Python aqui. `lib/services/api_service.dart` é o cliente
+Flutter preparado para consumir a API que será desenvolvida pelo outro grupo;
+`API_CONTRATO.md` é apenas a documentação do formato combinado entre as partes.
+Enquanto o backend não estiver pronto, o modo de demonstração fica ativo por
+padrão e os botões usam dados locais em memória.
 
 ## Como o código está organizado
 
 ```text
 lib/
-├── main.dart                 # Inicialização, tema e tela inicial
+├── main.dart                 # Inicialização, sessão, tema e tela de login
 ├── models/                   # Modelos Dart e conversão para/de JSON
 ├── screens/                  # Telas e fluxos de navegação
 ├── services/                 # Comunicação HTTP com a API
 ├── theme/                    # Cores, estilos e suporte aos temas
 ├── utils/                    # Formatação e funções reutilizadas
-└── widgets/                  # Componentes visuais reutilizados
+├── widgets/                  # Componentes visuais, logo e contato da loja
+└── config/
+    └── loja.dart             # Logo, Instagram, telefone e endereço
 
 API_CONTRATO.md               # Rotas e formato JSON que o backend deve atender
 ```
@@ -34,23 +43,39 @@ API_CONTRATO.md               # Rotas e formato JSON que o backend deve atender
   JSON do calçado.
 - **`theme/`, `utils/` e `widgets/`** concentram, respectivamente, a aparência,
   formatação e componentes reaproveitáveis.
+- **`config/loja.dart`** centraliza o nome, o endereço, o telefone, o Instagram
+  e o caminho do logo para que os dados de contato possam ser alterados em um
+  único lugar. O logo configurado é `assets/logo.png`.
 
 ## Fluxo principal para apresentar
 
-1. A tela inicial pede a lista à API, mostra o estado da conexão e permite
-   pesquisar ou filtrar tênis e chuteiras.
-2. O formulário de cadastro monta um `Calcado` e envia os dados à API.
-3. A tela de detalhes mostra o modelo e sua tabela de medidas; nela é possível
-   editar, excluir ou iniciar uma recomendação.
-4. Na recomendação, o Flutter envia o identificador do calçado e as medidas do
+1. A tela de login obtém o token JWT; as chamadas seguintes enviam esse token.
+2. O painel consulta os indicadores da loja e abre o catálogo de calçados.
+3. O catálogo permite pesquisar e filtrar tênis e chuteiras; o formulário de
+   cadastro envia os dados e o estoque à API.
+4. A tela de detalhes permite registrar uma venda informando a quantidade; o
+   estoque é baixado automaticamente e o dashboard é atualizado ao voltar.
+5. Também é possível editar, excluir ou iniciar uma recomendação.
+6. Na recomendação, o Flutter envia o identificador do calçado e as medidas do
    pé. O backend calcula o tamanho e devolve o resultado para a tela.
 
+Para registrar vendas reais, implemente no backend o endpoint `POST /vendas`
+descrito em [API_CONTRATO.md](API_CONTRATO.md). A baixa do estoque e a gravação
+da venda precisam ocorrer juntas na mesma transação. Sem esse endpoint, o
+registro só funciona no modo demonstração.
+
 No cadastro, também é possível selecionar uma foto JPG, PNG ou WebP de até
-5 MB no dispositivo/navegador. Ela aparece em pré-visualização e, ao salvar,
-é enviada à API, que deve guardá-la e devolver a URL usada pelo catálogo. O
-campo de URL continua como alternativa. O contrato descreve o endpoint
-`POST /imagens`; ele precisa existir no backend Python para a seleção de fotos
-ser persistida.
+5 MB no dispositivo/navegador. Ela aparece em pré-visualização. Em modo de
+demonstração, fica em memória e não exige API; com a API ativa, é enviada ao
+backend, que deve guardá-la e devolver a URL usada pelo catálogo. O campo de
+URL continua como alternativa. O contrato descreve o endpoint `POST /imagens`;
+ele precisa existir no backend Python para a seleção de fotos ser persistida.
+
+O logo Land View aparece na identificação do app e nas barras das telas. No
+login há atalhos para o Instagram e o telefone; no fim do painel há também um
+cartão de contato com Instagram, telefone e endereço. Se o dispositivo não
+conseguir abrir um link, o valor correspondente é copiado e o app informa a
+pessoa.
 
 ## Preparar e executar o Flutter
 
@@ -58,19 +83,30 @@ Na pasta `parte2-flutter`:
 
 ```bash
 flutter pub get
+```
+
+O Flutter inicia em modo de demonstração por padrão em todas as plataformas:
+as telas e os botões usam dados fictícios em memória, sem chamar uma API Python.
+Execute no navegador:
+
+```bash
 flutter run -d chrome
 ```
 
-O app assume que a API estará em `http://localhost:8000` no navegador. Para
-usar outro endereço, passe `API_URL`:
+No login, use qualquer e-mail válido e qualquer senha. Os dados são descartados
+quando o app é fechado. Android, iOS e desktop também iniciam nesse modo.
+
+Quando a API Python do grupo estiver pronta, desative o modo de demonstração
+para conectar o Flutter Web:
 
 ```bash
-flutter run -d chrome --dart-define=API_URL=http://localhost:8000
+flutter run -d chrome --dart-define=DEMO=false --dart-define=API_URL=http://localhost:8000
 ```
 
-No emulador Android, o endereço padrão é `http://10.0.2.2:8000`, que aponta
-para o computador hospedeiro. Em um celular físico, use o endereço IP local
-do computador, por exemplo:
+Para Android e outras plataformas, use o mesmo `DEMO=false`. O endereço padrão
+é `http://localhost:8000`; no emulador Android é `http://10.0.2.2:8000`, que
+aponta para o computador hospedeiro. Em um celular físico, use o endereço IP
+local do computador, por exemplo:
 
 ```bash
 flutter run --dart-define=API_URL=http://192.168.0.10:8000
