@@ -79,7 +79,7 @@ pessoa.
 
 ## Preparar e executar o Flutter
 
-Na pasta `parte2-flutter`:
+Na pasta `LandView_FrontStack`:
 
 ```bash
 flutter pub get
