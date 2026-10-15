@@ -1,4 +1,4 @@
-# Aplicativo Flutter — Provador Virtual
+# Aplicativo Flutter — LandView Stock
 
 Aplicativo Flutter para autenticação de vendedores, consulta do painel da loja,
 manutenção do catálogo de tênis e chuteiras e recomendação de tamanho. A API
