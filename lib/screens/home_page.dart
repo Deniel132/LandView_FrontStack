@@ -132,7 +132,7 @@ class _HomePageState extends State<HomePage> {
               mainAxisSize: MainAxisSize.min,
               children: [
                 Text(
-                  'Provador Virtual',
+                  'LandView Stock',
                   style: TextStyle(
                     fontSize: 16.5,
                     fontWeight: FontWeight.w700,

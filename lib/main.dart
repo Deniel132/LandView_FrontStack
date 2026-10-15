@@ -28,7 +28,7 @@ class MyApp extends StatelessWidget {
     return ValueListenableBuilder<ThemeMode>(
       valueListenable: themeNotifier,
       builder: (_, modo, __) => MaterialApp(
-        title: 'Provador Virtual',
+        title: 'LandView Stock',
         debugShowCheckedModeBanner: false,
         navigatorKey: navigatorKey,
         theme: AppTheme.light(),

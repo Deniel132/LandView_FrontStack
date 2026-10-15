@@ -122,7 +122,7 @@ class _CatalogoPageState extends State<CatalogoPage> {
           mainAxisSize: MainAxisSize.min,
           children: [
             Text(
-              'Provador Virtual',
+              'Controle De Estoque',
               style: TextStyle(
                 fontSize: 16.5,
                 fontWeight: FontWeight.w700,
@@ -131,7 +131,7 @@ class _CatalogoPageState extends State<CatalogoPage> {
               ),
             ),
             Text(
-              'Escolha o modelo para calcular o tamanho',
+              'Verificacao de estoque por tipo de calcados',
               style: TextStyle(fontSize: 12, color: context.textMuted),
             ),
           ],

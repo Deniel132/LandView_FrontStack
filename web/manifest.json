@@ -1,11 +1,11 @@
 {
-    "name": "Land View | Provador Virtual",
+    "name": "Land View | LandView Stock",
     "short_name": "Land View",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#F0F2EE",
     "theme_color": "#0754B8",
-    "description": "Provador Virtual Land View — catálogo e recomendação de calçados.",
+    "description": "LandView Stock Land View — catálogo e recomendação de calçados.",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [

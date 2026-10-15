@@ -290,7 +290,7 @@ class _Marca extends StatelessWidget {
         const LogoLoja(tamanho: 84, sombra: true),
         const SizedBox(height: 18),
         Text(
-          'Provador Virtual',
+          'LandView Stock',
           style: TextStyle(
             fontSize: 26,
             fontWeight: FontWeight.w700,
@@ -300,7 +300,7 @@ class _Marca extends StatelessWidget {
         ),
         const SizedBox(height: 4),
         Text(
-          'Land View · Artigos Esportivos',
+          'Artigos Esportivos',
           style: TextStyle(fontSize: 13.5, color: context.textMuted),
         ),
       ],

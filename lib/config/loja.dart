@@ -2,9 +2,9 @@
 class Loja {
   const Loja._();
 
-  static const nome = 'Land View';
+  static const nome = 'LandView Stock';
   static const nomeCompleto = 'Land View Artigos Esportivos';
-  static const produto = 'Provador Virtual';
+  static const produto = 'LandView Stock';
 
   static const endereco = 'Avenida São Paulo 743, Loja i17';
 

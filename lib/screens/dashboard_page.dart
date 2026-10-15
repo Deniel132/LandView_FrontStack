@@ -115,7 +115,7 @@ class _DashboardPageState extends State<DashboardPage> {
               mainAxisSize: MainAxisSize.min,
               children: [
                 Text(
-                  'Land View',
+                  'LandView Stock',
                   style: TextStyle(
                     fontSize: 16.5,
                     fontWeight: FontWeight.w700,
@@ -383,7 +383,7 @@ class _CartaoProvador extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     const Text(
-                      'Provador Virtual',
+                      'Controle De Estoque ',
                       style: TextStyle(
                         fontSize: 18,
                         fontWeight: FontWeight.w700,
