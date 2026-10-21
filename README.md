@@ -103,6 +103,11 @@ para conectar o Flutter Web:
 flutter run -d chrome --dart-define=DEMO=false --dart-define=API_URL=http://localhost:8000
 ```
 
+O repositório atual da API já expõe o login e a criação de conta em
+`/api/user/login` e `/api/user/`; o Flutter usa essas rotas quando `DEMO=false`.
+No cadastro, a API atual aceita e-mail e senha, sem nome. As outras telas ainda
+dependem dos endpoints do contrato e podem precisar de ajustes no backend.
+
 Para Android e outras plataformas, use o mesmo `DEMO=false`. O endereço padrão
 é `http://localhost:8000`; no emulador Android é `http://10.0.2.2:8000`, que
 aponta para o computador hospedeiro. Em um celular físico, use o endereço IP

@@ -27,10 +27,7 @@ class ApiService {
   /// A interface roda com dados locais por padrão enquanto o backend não está
   /// pronto. Assim, as telas e os botões podem ser demonstrados sem a API.
   /// Quando o backend estiver disponível, use `--dart-define=DEMO=false`.
-  static const bool modoDemo = bool.fromEnvironment(
-    'DEMO',
-    defaultValue: true,
-  );
+  static const bool modoDemo = bool.fromEnvironment('DEMO', defaultValue: true);
 
   /// Endereço da API. Para trocar sem mexer no código:
   ///   flutter run --dart-define=API_URL=http://192.168.0.10:8000
@@ -58,7 +55,7 @@ class ApiService {
 
   // --------------------------------------------------------------- Login
 
-  /// POST /auth/login. Guarda o token na [Sessao] e devolve o usuário.
+  /// Faz login na API e guarda o token na [Sessao].
   Future<Usuario> login(String email, String senha) async {
     if (modoDemo) {
       final usuario = await DadosDemo.instance.login(email);
@@ -68,27 +65,69 @@ class ApiService {
 
     final json = await _enviar(
       () => http.post(
-        _uri('/auth/login'),
+        _uri('/api/user/login'),
         headers: _headers,
-        body: jsonEncode({'email': email, 'senha': senha}),
+        body: jsonEncode({'email': email, 'password': senha}),
       ),
       autenticado: false, // 401 aqui é "senha errada", não "sessão expirada"
     );
     return _ler(() {
-      final mapa = json as Map<String, dynamic>;
-      final usuario = Usuario.fromJson(mapa['usuario'] as Map<String, dynamic>);
-      Sessao.instance.iniciar(mapa['access_token'] as String, usuario);
+      final token = json is String
+          ? json
+          : (json as Map<String, dynamic>)['access_token'] as String;
+      if (token.trim().isEmpty) {
+        throw const FormatException('A API devolveu um token vazio.');
+      }
+      final usuario = Usuario(
+        nome: email.trim().split('@').first,
+        email: email.trim(),
+      );
+      Sessao.instance.iniciar(token, usuario);
       return usuario;
     });
+  }
+
+  /// Cria uma conta na rota pública da API.
+  Future<void> criarConta(String email, String senha) async {
+    if (modoDemo) {
+      throw ApiException(
+        'O cadastro de contas só funciona quando o app está conectado à API.',
+      );
+    }
+
+    await _enviar(
+      () => http.post(
+        _uri('/api/user/'),
+        headers: _headers,
+        body: jsonEncode({
+          'email': email.trim(),
+          'password': senha,
+          'role': 'USER',
+        }),
+      ),
+      autenticado: false,
+    );
   }
 
   // ---------------------------------------------------------- Dashboard
 
   Future<Dashboard> dashboard() async {
     if (modoDemo) return DadosDemo.instance.dashboard();
-    final json = await _enviar(
-      () => http.get(_uri('/dashboard'), headers: _headers),
-    );
+    dynamic json;
+    try {
+      json = await _enviar(
+        () => http.get(_uri('/dashboard'), headers: _headers),
+      );
+    } on ApiException catch (e) {
+      if (e.status == 404) {
+        throw ApiException(
+          'O login funcionou, mas esta API ainda não implementa GET /dashboard. '
+          'A equipe do backend precisa criar esse endpoint para carregar o painel.',
+          status: 404,
+        );
+      }
+      rethrow;
+    }
     return _ler(() => Dashboard.fromJson(json as Map<String, dynamic>));
   }
 
