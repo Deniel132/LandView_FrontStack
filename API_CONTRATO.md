@@ -5,10 +5,30 @@ O que o **app Flutter espera** da API FastAPI. Se o backend mudar algo aqui, avi
 
 - Base URL local: `http://localhost:8000`
 - Formato: JSON (UTF-8)
-- **Sem barra no final** das rotas (`/calcados`, não `/calcados/`). Com barra o FastAPI responde 307 e o POST/PUT pode falhar no app.
-- **Todas as rotas, exceto `/auth/login`, exigem token** (veja "Autenticação").
+- **Sem barra no final** das rotas do contrato original (`/calcados`, não `/calcados/`).
+- Na API atual, `/api/user/login` e `/api/user/` são rotas públicas.
 
-## Autenticação (JWT)
+## Autenticação — integração atual com `LandView_API`
+
+O app foi adaptado ao repositório público atual: login em
+`POST /api/user/login` com `email` e `password`, e criação de conta em
+`POST /api/user/` com `email`, `password` e `role: "USER"`. O login retorna
+uma string JSON contendo o token, e o cadastro aceita apenas e-mail e senha,
+por isso a tela não pede nome. O Flutter retorna ao login após criar a conta.
+
+O backend atual usa um token próprio sem expiração, não JWT, e não retorna os
+dados completos do usuário no login. Ele já usa bcrypt para as senhas. O enum
+do backend aceita o perfil `USER`.
+
+No backend consultado, credenciais incorretas e e-mail duplicado lançam
+`ValueError`, que pode virar erro `500` no FastAPI; o ideal é responder `401`
+no login e `409` (ou `400`) no cadastro, ambos com `detail` em português.
+Para Flutter Web, a origem CORS configurada no backend também precisa incluir a
+origem local usada pelo navegador; `http://localhost:8000` não é a origem da
+interface Flutter Web.
+
+O restante desta seção descreve o contrato originalmente combinado, que ainda
+não corresponde à implementação atual do backend.
 
 ### POST `/auth/login`
 

@@ -5,10 +5,10 @@ import '../theme/app_theme.dart';
 import '../widgets/contato_loja.dart';
 import '../widgets/logo_loja.dart';
 import 'dashboard_page.dart';
+import 'criar_conta_page.dart';
 
-/// Primeira tela do app. Envia e-mail e senha para POST /auth/login; a API
-/// devolve o token JWT, que fica guardado na [Sessao] e acompanha as
-/// requisições seguintes.
+/// Primeira tela do app. Envia e-mail e senha para a API e guarda o token
+/// retornado na sessão para acompanhar as requisições seguintes.
 class LoginPage extends StatefulWidget {
   /// Verdadeiro quando o usuário foi mandado de volta porque a API recusou o token.
   final bool sessaoExpirada;
@@ -64,6 +64,18 @@ class _LoginPageState extends State<LoginPage> {
         _erro = e.mensagem;
       });
     }
+  }
+
+  Future<void> _abrirCriarConta() async {
+    final email = await Navigator.of(
+      context,
+    ).push<String>(MaterialPageRoute(builder: (_) => const CriarContaPage()));
+    if (!mounted || email == null) return;
+    setState(() {
+      _emailController.text = email;
+      _senhaController.clear();
+      _erro = null;
+    });
   }
 
   @override
@@ -212,6 +224,11 @@ class _LoginPageState extends State<LoginPage> {
                                         )
                                       : const Text('Entrar'),
                                 ),
+                              ),
+                              const SizedBox(height: 8),
+                              TextButton(
+                                onPressed: _entrando ? null : _abrirCriarConta,
+                                child: const Text('Criar uma conta'),
                               ),
                               if (ApiService.modoDemo) ...[
                                 const SizedBox(height: 14),
