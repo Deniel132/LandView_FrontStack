@@ -7,7 +7,7 @@ import 'api_exception.dart';
 
 /// Substitui a API quando o app roda com:
 ///   flutter run --dart-define=DEMO=true
-///-
+///
 /// Serve só para ver e apresentar as telas sem o backend pronto. Tudo vive
 /// em memória e some ao fechar o app. As medidas, preços, estoques e vendas
 /// abaixo são INVENTADOS para a demonstração e não representam a loja.
