@@ -1,15 +1,17 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../models/calcado.dart';
 import '../models/recomendacao.dart';
 import '../services/api_service.dart';
 import '../theme/app_theme.dart';
 import '../utils/formato.dart';
-import '../widgets/pilula.dart';
+import '../widgets/estados.dart';
 import '../widgets/logo_loja.dart';
+import '../widgets/pilula.dart';
 
 /// Fluxo principal do vendedor: informa a medida do pé e a numeração que o
-/// cliente costuma usar. O cálculo NÃO é feito aqui: o app envia os dados
-/// para a API, o Python calcula e o resultado volta para ser exibido.
+/// cliente costuma usar. O cálculo é delegado ao serviço/API e o resultado
+/// é exibido junto ao comparativo na grade do calçado.
 class RecomendacaoPage extends StatefulWidget {
   final Calcado calcado;
 
@@ -76,7 +78,7 @@ class _RecomendacaoPageState extends State<RecomendacaoPage> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Recomendar tamanho'),
+        title: const Text('Provador · Recomendar tamanho'),
         actions: const [MarcaAppBar()],
       ),
       body: Center(
@@ -111,11 +113,20 @@ class _RecomendacaoPageState extends State<RecomendacaoPage> {
                               ),
                             ),
                             const SizedBox(height: 2),
-                            Text(c.marca, style: TextStyle(fontSize: 13, color: context.textMuted)),
+                            Text(
+                              '${c.marca} · ${c.tipo.rotulo}',
+                              style: TextStyle(
+                                fontSize: 13,
+                                color: context.textMuted,
+                              ),
+                            ),
                           ],
                         ),
                       ),
-                      Pilula(texto: 'Forma ${c.forma.rotulo.toLowerCase()}', destaque: true),
+                      Pilula(
+                        texto: 'Forma ${c.forma.rotulo.toLowerCase()}',
+                        destaque: true,
+                      ),
                     ],
                   ),
                 ),
@@ -128,9 +139,11 @@ class _RecomendacaoPageState extends State<RecomendacaoPage> {
                     padding: EdgeInsets.symmetric(vertical: 28),
                     child: Center(child: CircularProgressIndicator()),
                   ),
-                if (_erro != null) _FaixaErro(mensagem: _erro!),
-                if (_resultado != null) _PainelResultado(calcado: c, resultado: _resultado!),
-                if (_resultado != null || _erro != null) const SizedBox(height: 16),
+                if (_erro != null) FaixaAviso.erro(mensagem: _erro!),
+                if (_resultado != null)
+                  _PainelResultado(calcado: c, resultado: _resultado!),
+                if (_resultado != null || _erro != null)
+                  const SizedBox(height: 16),
 
                 Form(
                   key: _formKey,
@@ -146,7 +159,9 @@ class _RecomendacaoPageState extends State<RecomendacaoPage> {
                       children: [
                         TextFormField(
                           controller: _peController,
-                          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                          keyboardType: const TextInputType.numberWithOptions(
+                            decimal: true,
+                          ),
                           textInputAction: TextInputAction.next,
                           decoration: const InputDecoration(
                             labelText: 'Medida do pé',
@@ -156,25 +171,57 @@ class _RecomendacaoPageState extends State<RecomendacaoPage> {
                           ),
                           validator: (v) {
                             final n = Formato.lerNumero(v ?? '');
-                            if (n == null) return 'Informe a medida em centímetros';
-                            if (n < 15 || n > 35) return 'Use um valor entre 15 e 35 cm';
+                            if (n == null) {
+                              return 'Informe a medida em centímetros';
+                            }
+                            if (n < 15 || n > 35) {
+                              return 'Use um valor entre 15 e 35 cm';
+                            }
                             return null;
                           },
+                        ),
+                        const SizedBox(height: 10),
+                        Wrap(
+                          spacing: 6,
+                          runSpacing: 6,
+                          children: [
+                            for (final medidaRapida in const [
+                              '24,5',
+                              '25,5',
+                              '26,5',
+                              '27,5',
+                              '28,5',
+                            ])
+                              ActionChip(
+                                label: Text('$medidaRapida cm'),
+                                visualDensity: VisualDensity.compact,
+                                onPressed: () {
+                                  _peController.text = medidaRapida;
+                                  _calcular();
+                                },
+                              ),
+                          ],
                         ),
                         const SizedBox(height: 16),
                         TextFormField(
                           controller: _numeracaoController,
-                          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                          keyboardType: const TextInputType.numberWithOptions(
+                            decimal: true,
+                          ),
                           textInputAction: TextInputAction.next,
                           decoration: const InputDecoration(
                             labelText: 'Numeração que o cliente costuma usar',
                             hintText: 'Ex.: 41 (opcional)',
-                            prefixIcon: Icon(Icons.confirmation_number_outlined),
+                            prefixIcon: Icon(
+                              Icons.confirmation_number_outlined,
+                            ),
                           ),
                           validator: (v) {
                             if (v == null || v.trim().isEmpty) return null;
                             final n = Formato.lerNumero(v);
-                            if (n == null || n < 20 || n > 50) return 'Use uma numeração entre 20 e 50';
+                            if (n == null || n < 20 || n > 50) {
+                              return 'Use uma numeração entre 20 e 50';
+                            }
                             return null;
                           },
                         ),
@@ -203,10 +250,15 @@ class _RecomendacaoPageState extends State<RecomendacaoPage> {
                         ? const SizedBox(
                             width: 18,
                             height: 18,
-                            child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Colors.white,
+                            ),
                           )
                         : const Icon(Icons.auto_awesome_rounded, size: 20),
-                    label: Text(_calculando ? 'Calculando...' : 'Calcular tamanho ideal'),
+                    label: Text(
+                      _calculando ? 'Calculando...' : 'Calcular tamanho ideal',
+                    ),
                   ),
                 ),
               ],
@@ -218,7 +270,7 @@ class _RecomendacaoPageState extends State<RecomendacaoPage> {
   }
 }
 
-/// Painel escuro com o número recomendado em destaque.
+/// Painel escuro com o número recomendado em destaque e comparativo na grade.
 class _PainelResultado extends StatelessWidget {
   final Calcado calcado;
   final Recomendacao resultado;
@@ -245,7 +297,10 @@ class _PainelResultado extends StatelessWidget {
               children: [
                 Text(
                   'Tamanho recomendado',
-                  style: TextStyle(fontSize: 12.5, color: Colors.white.withValues(alpha: 0.55)),
+                  style: TextStyle(
+                    fontSize: 12.5,
+                    color: Colors.white.withValues(alpha: 0.55),
+                  ),
                 ),
                 const SizedBox(height: 4),
                 Text(
@@ -261,18 +316,27 @@ class _PainelResultado extends StatelessWidget {
                 const SizedBox(height: 4),
                 Text(
                   'para ${calcado.nome}',
-                  style: TextStyle(fontSize: 13.5, color: Colors.white.withValues(alpha: 0.6)),
+                  style: TextStyle(
+                    fontSize: 13.5,
+                    color: Colors.white.withValues(alpha: 0.6),
+                  ),
                 ),
-                if (resultado.alternativa != null || resultado.folgaCm != null) ...[
+                if (resultado.alternativa != null ||
+                    resultado.folgaCm != null) ...[
                   const SizedBox(height: 14),
                   Wrap(
                     spacing: 8,
                     runSpacing: 6,
                     children: [
                       if (resultado.alternativa != null)
-                        _PilulaClara(texto: 'Alternativa: ${Formato.numeracao(resultado.alternativa!)}'),
+                        _PilulaClara(
+                          texto:
+                              'Alternativa: ${Formato.numeracao(resultado.alternativa!)}',
+                        ),
                       if (resultado.folgaCm != null)
-                        _PilulaClara(texto: 'Folga: ${Formato.cm(resultado.folgaCm!)}'),
+                        _PilulaClara(
+                          texto: 'Folga: ${Formato.cm(resultado.folgaCm!)}',
+                        ),
                     ],
                   ),
                 ],
@@ -287,7 +351,136 @@ class _PainelResultado extends StatelessWidget {
                     ),
                   ),
                 ],
+                if (calcado.tamanhos.isNotEmpty) ...[
+                  const SizedBox(height: 18),
+                  Text(
+                    'Posição na grade do modelo',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.white.withValues(alpha: 0.55),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 6,
+                    runSpacing: 6,
+                    children: [
+                      for (final m in calcado.tamanhos)
+                        _ChipGradeResultado(
+                          medida: m,
+                          recomendado: m.numeracao == resultado.tamanho,
+                          alternativa: m.numeracao == resultado.alternativa,
+                        ),
+                    ],
+                  ),
+                ],
+                const SizedBox(height: 18),
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton.icon(
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: Colors.white,
+                      side: BorderSide(
+                        color: Colors.white.withValues(alpha: 0.25),
+                      ),
+                    ),
+                    onPressed: () async {
+                      final texto = StringBuffer()
+                        ..writeln('📏 *Recomendação do Provador LandView*')
+                        ..writeln('• Modelo: *${calcado.nome}* (${calcado.marca})')
+                        ..writeln(
+                          '• Tamanho ideal: *${Formato.numeracao(resultado.tamanho)} BR*',
+                        );
+                      if (resultado.alternativa != null) {
+                        texto.writeln(
+                          '• Alternativa próxima: ${Formato.numeracao(resultado.alternativa!)} BR',
+                        );
+                      }
+                      if (resultado.observacao.isNotEmpty) {
+                        texto.writeln('• Detalhes: ${resultado.observacao}');
+                      }
+                      texto.writeln(
+                        '• Valor: ${Formato.real(calcado.preco)} (ou ${Formato.real(calcado.preco * 0.95)} no PIX)',
+                      );
+                      await Clipboard.setData(
+                        ClipboardData(text: texto.toString().trim()),
+                      );
+                      if (!context.mounted) return;
+                      ScaffoldMessenger.of(context)
+                        ..hideCurrentSnackBar()
+                        ..showSnackBar(
+                          const SnackBar(
+                            content: Text(
+                              'Recomendação copiada! Pronto para enviar ao cliente.',
+                            ),
+                          ),
+                        );
+                    },
+                    icon: const Icon(Icons.content_copy_rounded, size: 17),
+                    label: const Text('Copiar recomendação p/ cliente'),
+                  ),
+                ),
               ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ChipGradeResultado extends StatelessWidget {
+  final MedidaTamanho medida;
+  final bool recomendado;
+  final bool alternativa;
+
+  const _ChipGradeResultado({
+    required this.medida,
+    required this.recomendado,
+    required this.alternativa,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final corFundo = recomendado
+        ? AppColors.brand
+        : alternativa
+        ? Colors.white.withValues(alpha: 0.14)
+        : Colors.white.withValues(alpha: 0.04);
+    final corBorda = recomendado
+        ? AppColors.brandLight
+        : alternativa
+        ? Colors.white.withValues(alpha: 0.35)
+        : Colors.white.withValues(alpha: 0.1);
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: corFundo,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: corBorda),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            Formato.numeracao(medida.numeracao),
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w700,
+              color: recomendado || alternativa
+                  ? Colors.white
+                  : Colors.white.withValues(alpha: 0.65),
+            ),
+          ),
+          Text(
+            Formato.cm(medida.comprimentoCm),
+            style: TextStyle(
+              fontSize: 10.5,
+              color: recomendado
+                  ? Colors.white.withValues(alpha: 0.9)
+                  : Colors.white.withValues(alpha: 0.45),
             ),
           ),
         ],
@@ -311,37 +504,11 @@ class _PilulaClara extends StatelessWidget {
       ),
       child: Text(
         texto,
-        style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: Colors.white),
-      ),
-    );
-  }
-}
-
-class _FaixaErro extends StatelessWidget {
-  final String mensagem;
-  const _FaixaErro({required this.mensagem});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: AppColors.danger.withValues(alpha: 0.1),
-        borderRadius: BorderRadius.circular(AppTheme.radius),
-        border: Border.all(color: AppColors.danger.withValues(alpha: 0.35)),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Icon(Icons.error_outline_rounded, size: 20, color: AppColors.danger),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Text(
-              mensagem,
-              style: TextStyle(fontSize: 13.5, height: 1.4, color: context.textStrong),
-            ),
-          ),
-        ],
+        style: const TextStyle(
+          fontSize: 12.5,
+          fontWeight: FontWeight.w600,
+          color: Colors.white,
+        ),
       ),
     );
   }

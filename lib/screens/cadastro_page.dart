@@ -3,8 +3,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../models/calcado.dart';
 import '../services/api_service.dart';
+import '../services/dados_demo.dart';
 import '../theme/app_theme.dart';
 import '../utils/formato.dart';
+import '../widgets/estados.dart';
 import '../widgets/logo_loja.dart';
 
 /// Cria (POST) ou edita (PUT) um modelo de calçado. A própria tela chama a
@@ -49,11 +51,14 @@ class _CadastroPageState extends State<CadastroPage> {
       _marcaController.text = c.marca;
       _precoController.text = c.preco.toStringAsFixed(2).replaceAll('.', ',');
       _estoqueController.text = c.estoque.toString();
-      _imagemController.text = c.imagemUrl ?? '';
-      _imagemPreview = ApiService.modoDemo ? c.imagemBytes : null;
+      _imagemController.text =
+          (c.imagemUrl != null && !c.imagemUrl!.startsWith('data:image'))
+          ? c.imagemUrl!
+          : '';
+      _imagemPreview = c.imagemBytes;
       _tipo = c.tipo;
       _forma = c.forma;
-      _tamanhos.addAll(c.tamanhos);
+      _tamanhos.addAll(c.tamanhosComEstoque);
     }
   }
 
@@ -67,18 +72,49 @@ class _CadastroPageState extends State<CadastroPage> {
     super.dispose();
   }
 
-  /// Abre o formulário de uma numeração e a inclui na tabela do calçado.
-  Future<void> _adicionarTamanho() async {
+  /// Abre o formulário de uma numeração (nova ou edição) e atualiza a tabela.
+  Future<void> _editarOuAdicionarTamanho([MedidaTamanho? inicial]) async {
     final novo = await showDialog<MedidaTamanho>(
       context: context,
-      builder: (_) => const _DialogoTamanho(),
+      builder: (_) => _DialogoTamanho(inicial: inicial),
     );
     if (novo == null) return;
     setState(() {
+      if (inicial != null) {
+        _tamanhos.remove(inicial);
+      }
       // Mesma numeração digitada duas vezes: a nova substitui a antiga.
       _tamanhos.removeWhere((t) => t.numeracao == novo.numeracao);
       _tamanhos.add(novo);
       _tamanhos.sort((a, b) => a.numeracao.compareTo(b.numeracao));
+      if (_tamanhos.any((t) => t.estoque != null)) {
+        final soma = _tamanhos.fold<int>(0, (s, t) => s + (t.estoque ?? 0));
+        _estoqueController.text = soma.toString();
+      }
+      _erroTabela = null;
+    });
+  }
+
+  /// Preenche automaticamente a grade padrão do 37 ao 45 conforme a forma.
+  void _gerarGradePadrao() {
+    setState(() {
+      final estoqueAtual = int.tryParse(_estoqueController.text.trim()) ?? 18;
+      final padrao = DadosDemo.gerarTabelaPadrao(_forma);
+      for (final item in padrao) {
+        if (!_tamanhos.any((t) => t.numeracao == item.numeracao)) {
+          _tamanhos.add(item);
+        }
+      }
+      _tamanhos.sort((a, b) => a.numeracao.compareTo(b.numeracao));
+      final base = estoqueAtual ~/ _tamanhos.length;
+      final resto = estoqueAtual % _tamanhos.length;
+      for (var i = 0; i < _tamanhos.length; i++) {
+        _tamanhos[i] = _tamanhos[i].copyWith(
+          estoque: _tamanhos[i].estoque ?? (base + (i < resto ? 1 : 0)),
+        );
+      }
+      final soma = _tamanhos.fold<int>(0, (s, t) => s + (t.estoque ?? 0));
+      _estoqueController.text = soma.toString();
       _erroTabela = null;
     });
   }
@@ -147,7 +183,9 @@ class _CadastroPageState extends State<CadastroPage> {
 
     try {
       final imagemUrl = _arquivoImagem == null
-          ? _imagemController.text.trim()
+          ? (_imagemController.text.trim().isNotEmpty
+                ? _imagemController.text.trim()
+                : (_imagemPreview != null ? widget.calcado?.imagemUrl : null))
           // Sem backend, conserva a foto selecionada em memória no próprio app.
           : ApiService.modoDemo
           ? null
@@ -359,7 +397,7 @@ class _CadastroPageState extends State<CadastroPage> {
                   _Secao(
                     titulo: 'Características',
                     children: [
-                      _Rotulo('Tipo'),
+                      const _Rotulo('Tipo'),
                       SegmentedButton<TipoCalcado>(
                         segments: [
                           for (final t in TipoCalcado.values)
@@ -373,7 +411,7 @@ class _CadastroPageState extends State<CadastroPage> {
                             setState(() => _tipo = s.first),
                       ),
                       const SizedBox(height: 18),
-                      _Rotulo('Forma (largura do calçado)'),
+                      const _Rotulo('Forma (largura do calçado)'),
                       SegmentedButton<FormaCalcado>(
                         segments: [
                           for (final f in FormaCalcado.values)
@@ -398,11 +436,11 @@ class _CadastroPageState extends State<CadastroPage> {
                   ),
                   const SizedBox(height: 16),
                   _Secao(
-                    titulo: 'Tabela de medidas',
+                    titulo: 'Tabela de medidas (${_tamanhos.length})',
                     children: [
                       Text(
                         'Comprimento interno de cada numeração, em centímetros. '
-                        'É a partir dela que o tamanho ideal é calculado.',
+                        'Toque em um tamanho para editar sua medida.',
                         style: TextStyle(
                           fontSize: 13,
                           height: 1.4,
@@ -410,7 +448,7 @@ class _CadastroPageState extends State<CadastroPage> {
                         ),
                       ),
                       const SizedBox(height: 14),
-                      if (_tamanhos.isNotEmpty)
+                      if (_tamanhos.isNotEmpty) ...[
                         Wrap(
                           spacing: 8,
                           runSpacing: 6,
@@ -418,73 +456,81 @@ class _CadastroPageState extends State<CadastroPage> {
                             for (final t in _tamanhos)
                               InputChip(
                                 label: Text(
-                                  '${Formato.numeracao(t.numeracao)} · ${Formato.cm(t.comprimentoCm)}',
+                                  '${Formato.numeracao(t.numeracao)} · ${Formato.cm(t.comprimentoCm)}${t.estoque != null ? ' · ${t.estoque} un.' : ''}',
                                 ),
-                                onDeleted: () =>
-                                    setState(() => _tamanhos.remove(t)),
+                                onPressed: () => _editarOuAdicionarTamanho(t),
+                                onDeleted: () => setState(() {
+                                  _tamanhos.remove(t);
+                                  if (_tamanhos.any((x) => x.estoque != null)) {
+                                    final soma = _tamanhos.fold<int>(
+                                      0,
+                                      (s, x) => s + (x.estoque ?? 0),
+                                    );
+                                    _estoqueController.text = soma.toString();
+                                  }
+                                }),
                               ),
                           ],
                         ),
+                        const SizedBox(height: 12),
+                      ],
                       if (_erroTabela != null) ...[
-                        const SizedBox(height: 8),
-                        Text(
-                          _erroTabela!,
-                          style: const TextStyle(
-                            fontSize: 12.5,
-                            color: AppColors.danger,
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 10),
+                          child: Text(
+                            _erroTabela!,
+                            style: const TextStyle(
+                              fontSize: 12.5,
+                              color: AppColors.danger,
+                            ),
                           ),
                         ),
                       ],
-                      const SizedBox(height: 10),
-                      Align(
-                        alignment: Alignment.centerLeft,
-                        child: OutlinedButton.icon(
-                          onPressed: _adicionarTamanho,
-                          style: OutlinedButton.styleFrom(
-                            padding: const EdgeInsets.symmetric(
-                              vertical: 12,
-                              horizontal: 16,
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: [
+                          OutlinedButton.icon(
+                            onPressed: () => _editarOuAdicionarTamanho(),
+                            style: OutlinedButton.styleFrom(
+                              padding: const EdgeInsets.symmetric(
+                                vertical: 12,
+                                horizontal: 16,
+                              ),
                             ),
+                            icon: const Icon(Icons.add, size: 18),
+                            label: const Text('Adicionar tamanho'),
                           ),
-                          icon: const Icon(Icons.add, size: 18),
-                          label: const Text('Adicionar tamanho'),
-                        ),
+                          OutlinedButton.icon(
+                            onPressed: _gerarGradePadrao,
+                            style: OutlinedButton.styleFrom(
+                              padding: const EdgeInsets.symmetric(
+                                vertical: 12,
+                                horizontal: 16,
+                              ),
+                            ),
+                            icon: const Icon(
+                              Icons.auto_fix_high_rounded,
+                              size: 18,
+                            ),
+                            label: const Text('Preencher grade 37–45'),
+                          ),
+                          if (_tamanhos.length > 1)
+                            TextButton(
+                              onPressed: () =>
+                                  setState(() => _tamanhos.clear()),
+                              child: const Text(
+                                'Limpar tabela',
+                                style: TextStyle(color: AppColors.danger),
+                              ),
+                            ),
+                        ],
                       ),
                     ],
                   ),
                   if (_erroApi != null) ...[
                     const SizedBox(height: 16),
-                    Container(
-                      padding: const EdgeInsets.all(14),
-                      decoration: BoxDecoration(
-                        color: AppColors.danger.withValues(alpha: 0.1),
-                        borderRadius: BorderRadius.circular(AppTheme.radius),
-                        border: Border.all(
-                          color: AppColors.danger.withValues(alpha: 0.35),
-                        ),
-                      ),
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Icon(
-                            Icons.error_outline_rounded,
-                            size: 20,
-                            color: AppColors.danger,
-                          ),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            child: Text(
-                              _erroApi!,
-                              style: TextStyle(
-                                fontSize: 13.5,
-                                height: 1.4,
-                                color: context.textStrong,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
+                    FaixaAviso.erro(mensagem: _erroApi!),
                   ],
                   const SizedBox(height: 22),
                   SizedBox(
@@ -523,11 +569,10 @@ class _CadastroPageState extends State<CadastroPage> {
   }
 }
 
-/// Diálogo para uma linha da tabela. É um widget próprio para que os
-/// controladores sejam descartados no `dispose()` do próprio diálogo, depois
-/// da animação de fechamento (descartar logo após o `await` gera erro).
+/// Diálogo para adicionar ou editar uma linha da tabela de medidas.
 class _DialogoTamanho extends StatefulWidget {
-  const _DialogoTamanho();
+  final MedidaTamanho? inicial;
+  const _DialogoTamanho({this.inicial});
 
   @override
   State<_DialogoTamanho> createState() => _DialogoTamanhoState();
@@ -535,35 +580,48 @@ class _DialogoTamanho extends StatefulWidget {
 
 class _DialogoTamanhoState extends State<_DialogoTamanho> {
   final _chave = GlobalKey<FormState>();
-  final _numeracaoController = TextEditingController();
-  final _comprimentoController = TextEditingController();
+  late final _numeracaoController = TextEditingController(
+    text: widget.inicial == null
+        ? ''
+        : Formato.numeracao(widget.inicial!.numeracao),
+  );
+  late final _comprimentoController = TextEditingController(
+    text: widget.inicial == null
+        ? ''
+        : widget.inicial!.comprimentoCm.toStringAsFixed(1).replaceAll('.', ','),
+  );
+  late final _estoqueTamanhoController = TextEditingController(
+    text: widget.inicial?.estoque?.toString() ?? '2',
+  );
 
   @override
   void dispose() {
     _numeracaoController.dispose();
     _comprimentoController.dispose();
+    _estoqueTamanhoController.dispose();
     super.dispose();
   }
 
   void _confirmar() {
     if (!(_chave.currentState?.validate() ?? false)) return;
+    final qtdTexto = _estoqueTamanhoController.text.trim();
+    final qtd = qtdTexto.isEmpty ? null : int.tryParse(qtdTexto);
     Navigator.of(context).pop(
       MedidaTamanho(
         numeracao: Formato.lerNumero(_numeracaoController.text)!,
         comprimentoCm: Formato.lerNumero(_comprimentoController.text)!,
+        estoque: qtd,
       ),
     );
   }
 
   @override
   Widget build(BuildContext context) {
+    final editando = widget.inicial != null;
     return AlertDialog(
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(AppTheme.radiusLg),
-      ),
-      title: const Text(
-        'Novo tamanho',
-        style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+      title: Text(
+        editando ? 'Editar tamanho' : 'Novo tamanho',
+        style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
       ),
       content: Form(
         key: _chave,
@@ -607,6 +665,24 @@ class _DialogoTamanhoState extends State<_DialogoTamanho> {
                 return null;
               },
             ),
+            const SizedBox(height: 14),
+            TextFormField(
+              controller: _estoqueTamanhoController,
+              keyboardType: TextInputType.number,
+              inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+              onFieldSubmitted: (_) => _confirmar(),
+              decoration: const InputDecoration(
+                labelText: 'Estoque deste tamanho',
+                hintText: 'Ex.: 3',
+                suffixText: 'un.',
+              ),
+              validator: (v) {
+                if (v == null || v.trim().isEmpty) return null;
+                final n = int.tryParse(v.trim());
+                if (n == null || n < 0) return 'Quantidade inválida';
+                return null;
+              },
+            ),
           ],
         ),
       ),
@@ -617,9 +693,9 @@ class _DialogoTamanhoState extends State<_DialogoTamanho> {
         ),
         TextButton(
           onPressed: _confirmar,
-          child: const Text(
-            'Adicionar',
-            style: TextStyle(fontWeight: FontWeight.w600),
+          child: Text(
+            editando ? 'Salvar' : 'Adicionar',
+            style: const TextStyle(fontWeight: FontWeight.w600),
           ),
         ),
       ],

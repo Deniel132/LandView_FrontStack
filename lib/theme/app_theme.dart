@@ -1,12 +1,14 @@
 import 'package:flutter/material.dart';
 
-/// Paleta da Land View: azul da marca, grafite e papel quente.
+/// Paleta da Land View: azul da marca, grafite, papel quente e cores semânticas.
 class AppColors {
   static const ink = Color(0xFF0E1512);
   static const steel = Color(0xFF16201B);
   static const paper = Color(0xFFF0F2EE);
   static const brand = Color(0xFF0754B8);
   static const brandLight = Color(0xFF6FA8E8);
+  static const success = Color(0xFF1E8449);
+  static const successLight = Color(0xFF52BE80);
   static const hazard = Color(0xFFD99A2B);
   static const danger = Color(0xFFC0392B);
   static const mist = Color(0xFF8A988F);
@@ -83,11 +85,12 @@ class AppTheme {
             ? Colors.white.withValues(alpha: 0.04)
             : const Color(0xFFF7F8F6),
         labelStyle: TextStyle(color: muted, fontSize: 14),
-        floatingLabelStyle: TextStyle(color: accent),
+        hintStyle: TextStyle(color: muted.withValues(alpha: 0.7), fontSize: 14),
+        floatingLabelStyle: TextStyle(color: accent, fontWeight: FontWeight.w600),
         prefixIconColor: muted,
         contentPadding: const EdgeInsets.symmetric(
           horizontal: 16,
-          vertical: 18,
+          vertical: 16,
         ),
         border: borda(linha),
         enabledBorder: borda(linha),
@@ -132,6 +135,13 @@ class AppTheme {
         foregroundColor: Colors.white,
         elevation: 2,
       ),
+      dialogTheme: DialogThemeData(
+        backgroundColor: isDark ? AppColors.steel : Colors.white,
+        surfaceTintColor: Colors.transparent,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(radiusLg),
+        ),
+      ),
       snackBarTheme: SnackBarThemeData(
         behavior: SnackBarBehavior.floating,
         backgroundColor: isDark ? AppColors.steel : AppColors.ink,
@@ -148,6 +158,9 @@ class AppTheme {
 extension AppThemeX on BuildContext {
   bool get isDark => Theme.of(this).brightness == Brightness.dark;
   Color get cardSurface => isDark ? AppColors.steel : Colors.white;
+  Color get subtleSurface => isDark
+      ? Colors.white.withValues(alpha: 0.04)
+      : const Color(0xFFF5F6F3);
   Color get hairline => isDark
       ? Colors.white.withValues(alpha: 0.09)
       : Colors.black.withValues(alpha: 0.09);
@@ -155,4 +168,5 @@ extension AppThemeX on BuildContext {
   Color get textStrong => isDark ? Colors.white : AppColors.ink;
   Color get accent => isDark ? AppColors.brandLight : AppColors.brand;
   Color get info => isDark ? AppColors.infoLight : AppColors.info;
+  Color get success => isDark ? AppColors.successLight : AppColors.success;
 }
