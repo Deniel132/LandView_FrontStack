@@ -4,7 +4,7 @@ import '../theme/app_theme.dart';
 import '../utils/formato.dart';
 import 'pilula.dart';
 
-/// Linha do catálogo: miniatura, nome, marca, tipo/forma e preço.
+/// Linha do catálogo: miniatura, nome, marca, tipo/forma, estoque e preço.
 ///
 /// O toque no cartão abre a tela com os detalhes do calçado.
 class CartaoCalcado extends StatelessWidget {
@@ -17,7 +17,36 @@ class CartaoCalcado extends StatelessWidget {
     if (calcado.tamanhos.isEmpty) return 'sem tabela';
     final menor = calcado.tamanhos.first.numeracao;
     final maior = calcado.tamanhos.last.numeracao;
-    return 'nº ${Formato.numeracao(menor)} a ${Formato.numeracao(maior)}';
+    final ativos = calcado.totalTamanhosDisponiveis;
+    final total = calcado.tamanhos.length;
+    return 'nº ${Formato.numeracao(menor)} a ${Formato.numeracao(maior)} ($ativos/$total tam.)';
+  }
+
+  Widget _pilulaEstoque(BuildContext context) {
+    if (calcado.esgotado) {
+      return const Pilula(
+        texto: 'Esgotado',
+        cor: AppColors.danger,
+        icone: Icons.block_rounded,
+      );
+    }
+    if (calcado.estoqueBaixo) {
+      return Pilula(
+        texto: 'Restam ${calcado.estoque} un.',
+        cor: AppColors.hazard,
+        icone: Icons.warning_amber_rounded,
+      );
+    }
+    if (calcado.estoqueAlto) {
+      return Pilula(
+        texto: '${calcado.estoque} un. (excesso)',
+        cor: context.info,
+      );
+    }
+    return Pilula(
+      texto: '${calcado.estoque} un.',
+      cor: context.success,
+    );
   }
 
   @override
@@ -73,7 +102,11 @@ class CartaoCalcado extends StatelessWidget {
                         runSpacing: 4,
                         children: [
                           Pilula(texto: calcado.tipo.rotulo, destaque: true),
-                          Pilula(texto: 'Forma ${calcado.forma.rotulo.toLowerCase()}'),
+                          Pilula(
+                            texto:
+                                'Forma ${calcado.forma.rotulo.toLowerCase()}',
+                          ),
+                          _pilulaEstoque(context),
                         ],
                       ),
                       const SizedBox(height: 10),
@@ -94,7 +127,10 @@ class CartaoCalcado extends StatelessWidget {
                               _faixa,
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
-                              style: TextStyle(fontSize: 12, color: context.textMuted),
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: context.textMuted,
+                              ),
                             ),
                           ),
                         ],
@@ -132,7 +168,9 @@ class _Miniatura extends StatelessWidget {
       width: 76,
       height: 76,
       decoration: BoxDecoration(
-        color: context.isDark ? Colors.white.withValues(alpha: 0.05) : const Color(0xFFF3F4F1),
+        color: context.isDark
+            ? Colors.white.withValues(alpha: 0.05)
+            : const Color(0xFFF3F4F1),
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: context.hairline),
       ),

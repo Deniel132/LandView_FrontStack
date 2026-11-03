@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../services/api_service.dart';
 import '../theme/app_theme.dart';
+import '../widgets/estados.dart';
 import '../widgets/logo_loja.dart';
 
 class CriarContaPage extends StatefulWidget {
@@ -20,6 +21,7 @@ class _CriarContaPageState extends State<CriarContaPage> {
   bool _ocultarSenha = true;
   bool _ocultarConfirmacao = true;
   bool _salvando = false;
+  String _role = 'SELLER';
   String? _erro;
 
   @override
@@ -40,11 +42,15 @@ class _CriarContaPageState extends State<CriarContaPage> {
 
     final email = _emailController.text.trim();
     try {
-      await ApiService.instance.criarConta(email, _senhaController.text);
+      await ApiService.instance.criarConta(
+        email,
+        _senhaController.text,
+        role: _role,
+      );
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Conta criada. Entre com seu e-mail e senha.'),
+          content: Text('Conta criada com sucesso. Entre com seu e-mail e senha.'),
         ),
       );
       Navigator.of(context).pop(email);
@@ -75,27 +81,11 @@ class _CriarContaPageState extends State<CriarContaPage> {
                   const LogoLoja(tamanho: 72, sombra: true),
                   const SizedBox(height: 22),
                   if (ApiService.modoDemo) ...[
-                    Container(
-                      width: double.infinity,
-                      margin: const EdgeInsets.only(bottom: 16),
-                      padding: const EdgeInsets.all(14),
-                      decoration: BoxDecoration(
-                        color: AppColors.hazard.withValues(alpha: 0.1),
-                        borderRadius: BorderRadius.circular(AppTheme.radius),
-                        border: Border.all(
-                          color: AppColors.hazard.withValues(alpha: 0.35),
-                        ),
-                      ),
-                      child: Text(
-                        'O modo demonstração não salva contas. Para cadastrar, '
-                        'execute o app com DEMO=false e conecte à API.',
-                        style: TextStyle(
-                          fontSize: 13,
-                          height: 1.4,
-                          color: context.textStrong,
-                        ),
-                      ),
+                    const FaixaAviso.info(
+                      mensagem:
+                          'Modo demonstração: a conta criada ficará ativa em memória durante esta sessão.',
                     ),
+                    const SizedBox(height: 16),
                   ],
                   Container(
                     padding: const EdgeInsets.all(22),
@@ -135,6 +125,32 @@ class _CriarContaPageState extends State<CriarContaPage> {
                             ),
                           ),
                           const SizedBox(height: 22),
+                          DropdownButtonFormField<String>(
+                            initialValue: _role,
+                            isExpanded: true,
+                            decoration: const InputDecoration(
+                              labelText: 'Perfil de acesso',
+                              prefixIcon: Icon(Icons.badge_outlined),
+                            ),
+                            items: const [
+                              DropdownMenuItem(
+                                value: 'SELLER',
+                                child: Text('Vendedor(a)'),
+                              ),
+                              DropdownMenuItem(
+                                value: 'OWNER',
+                                child: Text('Proprietário(a)'),
+                              ),
+                              DropdownMenuItem(
+                                value: 'USER',
+                                child: Text('Usuário(a)'),
+                              ),
+                            ],
+                            onChanged: (v) {
+                              if (v != null) setState(() => _role = v);
+                            },
+                          ),
+                          const SizedBox(height: 16),
                           TextFormField(
                             controller: _emailController,
                             keyboardType: TextInputType.emailAddress,
@@ -164,6 +180,7 @@ class _CriarContaPageState extends State<CriarContaPage> {
                             autofillHints: const [AutofillHints.newPassword],
                             decoration: InputDecoration(
                               labelText: 'Senha',
+                              helperText: 'Mínimo de 8 caracteres',
                               prefixIcon: const Icon(
                                 Icons.lock_outline_rounded,
                               ),
@@ -229,7 +246,7 @@ class _CriarContaPageState extends State<CriarContaPage> {
                           ),
                           if (_erro != null) ...[
                             const SizedBox(height: 16),
-                            _MensagemErro(texto: _erro!),
+                            FaixaAviso.erro(mensagem: _erro!),
                           ],
                           const SizedBox(height: 22),
                           SizedBox(
@@ -267,32 +284,4 @@ class _CriarContaPageState extends State<CriarContaPage> {
       ),
     );
   }
-}
-
-class _MensagemErro extends StatelessWidget {
-  final String texto;
-
-  const _MensagemErro({required this.texto});
-
-  @override
-  Widget build(BuildContext context) => Container(
-    padding: const EdgeInsets.all(14),
-    decoration: BoxDecoration(
-      color: AppColors.danger.withValues(alpha: 0.1),
-      borderRadius: BorderRadius.circular(AppTheme.radius),
-      border: Border.all(color: AppColors.danger.withValues(alpha: 0.35)),
-    ),
-    child: Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Icon(
-          Icons.error_outline_rounded,
-          size: 20,
-          color: AppColors.danger,
-        ),
-        const SizedBox(width: 10),
-        Expanded(child: Text(texto)),
-      ],
-    ),
-  );
 }

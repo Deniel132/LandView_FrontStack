@@ -1,9 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:parte2_flutter/screens/detalhe_page.dart';
+import 'package:parte2_flutter/services/api_service.dart';
 import 'package:parte2_flutter/services/dados_demo.dart';
 
 void main() {
+  setUp(() => ApiService.modoDemoOverride = true);
+  tearDown(() => ApiService.modoDemoOverride = null);
+
   testWidgets('registra quantidade escolhida e atualiza estoque no detalhe', (
     tester,
   ) async {

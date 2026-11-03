@@ -1,28 +1,43 @@
 import '../models/calcado.dart';
 import '../models/dashboard.dart';
 import '../models/recomendacao.dart';
+import '../models/saida_estoque.dart';
 import '../models/usuario.dart';
 import '../models/venda.dart';
+import '../utils/formato.dart';
 import 'api_exception.dart';
 
 /// Substitui a API quando o app roda com:
 ///   flutter run --dart-define=DEMO=true
 ///
-/// Serve só para ver e apresentar as telas sem o backend pronto. Tudo vive
-/// em memória e some ao fechar o app. As medidas, preços, estoques e vendas
-/// abaixo são INVENTADOS para a demonstração e não representam a loja.
+/// Serve para demonstrar e testar todas as telas sem o backend Python. Tudo
+/// vive em memória e é reiniciado ao fechar o app.
 class DadosDemo {
   DadosDemo._();
   static final DadosDemo instance = DadosDemo._();
 
-  static const _latencia = Duration(milliseconds: 350);
+  static const _latencia = Duration(milliseconds: 280);
   static const limiteBaixo = 5;
   static const limiteAlto = 40;
 
   final Map<int, int> _vendas = {}; // id -> vendas em 30 dias
-  late final List<Calcado> _lista = _semear();
+  final Set<String> _contasCadastradas = {'cliente@loja.com'};
+  final List<SaidaEstoque> _saidas = [];
+  late List<Calcado> _lista = _semear();
   int _proximoId = 100;
   int _proximaVendaId = 1;
+
+  /// Reinicia os dados em memória (útil para testes automatizados).
+  void resetar() {
+    _vendas.clear();
+    _saidas.clear();
+    _contasCadastradas
+      ..clear()
+      ..add('cliente@loja.com');
+    _lista = _semear();
+    _proximoId = 100;
+    _proximaVendaId = 1;
+  }
 
   /// Pequena espera para os indicadores de carregamento aparecerem.
   Future<T> _atraso<T>(T Function() acao) async {
@@ -31,6 +46,16 @@ class DadosDemo {
   }
 
   // ---------------------------------------------------------------- dados
+
+  /// Gera uma tabela padrão de 37 a 45 para a [forma] informada.
+  static List<MedidaTamanho> gerarTabelaPadrao(FormaCalcado forma) {
+    final base37 = switch (forma) {
+      FormaCalcado.estreita => 24.9,
+      FormaCalcado.padrao => 25.0,
+      FormaCalcado.larga => 25.2,
+    };
+    return _tabela(base37);
+  }
 
   /// Tabela de 37 a 45. O comprimento interno cresce ~0,667 cm por número
   /// (um "ponto francês"); `comp37` é o comprimento interno do número 37.
@@ -89,16 +114,39 @@ class DadosDemo {
   // ------------------------------------------------------------- operações
 
   Future<Usuario> login(String email) => _atraso(() {
-    final primeiroNome = email
+    final partes = email
         .trim()
         .split('@')
         .first
-        .split(RegExp(r'[._-]'))
-        .first;
-    final nome = primeiroNome.isEmpty
-        ? 'Cliente'
-        : '${primeiroNome[0].toUpperCase()}${primeiroNome.substring(1)}';
-    return Usuario(id: 1, nome: nome, email: email);
+        .split(RegExp(r'[._-]+'))
+        .where((p) => p.isNotEmpty)
+        .toList();
+    final nome = partes.isEmpty
+        ? 'Vendedor'
+        : partes
+              .map((p) => '${p[0].toUpperCase()}${p.substring(1).toLowerCase()}')
+              .join(' ');
+    return Usuario(
+      id: 1,
+      nome: nome,
+      email: email.trim(),
+      perfil: 'SELLER',
+    );
+  });
+
+  Future<void> criarConta(
+    String email,
+    String senha, {
+    String role = 'SELLER',
+  }) => _atraso(() {
+    final normalizado = email.trim().toLowerCase();
+    if (_contasCadastradas.contains(normalizado)) {
+      throw ApiException(
+        'Já existe uma conta cadastrada com este e-mail.',
+        status: 409,
+      );
+    }
+    _contasCadastradas.add(normalizado);
   });
 
   Future<List<Calcado>> listar() => _atraso(() => List.of(_lista));
@@ -106,18 +154,7 @@ class DadosDemo {
   Future<Calcado> buscar(int id) => _atraso(() => _achar(id));
 
   Future<Calcado> criar(Calcado c) => _atraso(() {
-    final novo = Calcado(
-      id: _proximoId++,
-      nome: c.nome,
-      marca: c.marca,
-      tipo: c.tipo,
-      forma: c.forma,
-      preco: c.preco,
-      imagemUrl: c.imagemUrl,
-      imagemBytes: c.imagemBytes,
-      estoque: c.estoque,
-      tamanhos: c.tamanhos,
-    );
+    final novo = c.copyWith(id: _proximoId++);
     _vendas[novo.id!] = 0;
     _lista.add(novo);
     return novo;
@@ -155,13 +192,45 @@ class DadosDemo {
     _lista[indice] = atualizado;
     _vendas[calcadoId] = (_vendas[calcadoId] ?? 0) + quantidade;
 
+    final vendaId = _proximaVendaId++;
+    _saidas.insert(
+      0,
+      SaidaEstoque(
+        id: vendaId,
+        idProduto: calcadoId,
+        idUsuario: 1,
+        idEstoque: calcadoId,
+        quantidade: quantidade,
+        nomeProduto: calcado.nome,
+        emailUsuario: 'vendedor@loja.com',
+      ),
+    );
+
     return VendaRegistrada(
-      id: _proximaVendaId++,
+      id: vendaId,
       calcadoId: calcadoId,
       quantidade: quantidade,
       estoqueAtual: atualizado.estoque,
       dataVenda: DateTime.now(),
     );
+  });
+
+  Future<List<SaidaEstoque>> listarSaidas({
+    int page = 1,
+    int pageSize = 15,
+    int? idProduct,
+    int? idStock,
+  }) => _atraso(() {
+    var filtradas = _saidas;
+    if (idProduct != null) {
+      filtradas = filtradas.where((s) => s.idProduto == idProduct).toList();
+    }
+    if (idStock != null) {
+      filtradas = filtradas.where((s) => s.idEstoque == idStock).toList();
+    }
+    final start = (page - 1) * pageSize;
+    if (start >= filtradas.length) return <SaidaEstoque>[];
+    return filtradas.skip(start).take(pageSize).toList();
   });
 
   Calcado _achar(int id) => _lista.firstWhere(
@@ -177,6 +246,11 @@ class DadosDemo {
       vendas: _vendas[c.id] ?? 0,
       estoque: c.estoque,
     );
+
+    final ordenadosPorEstoque = [..._lista]
+      ..sort((a, b) => a.estoque.compareTo(b.estoque));
+    final menor = ordenadosPorEstoque.isNotEmpty ? ordenadosPorEstoque.first : null;
+    final maior = ordenadosPorEstoque.isNotEmpty ? ordenadosPorEstoque.last : null;
 
     final vendidos = [..._lista]
       ..sort((a, b) => (_vendas[b.id] ?? 0).compareTo(_vendas[a.id] ?? 0));
@@ -202,36 +276,90 @@ class DadosDemo {
           .toList(),
       estoqueBaixo: baixo.map(item).toList(),
       estoqueAlto: alto.map(item).toList(),
+      menorEstoque: menor != null
+          ? ExtremoEstoque(
+              produtoId: menor.id!,
+              nome: menor.nome,
+              preco: menor.preco,
+              quantidade: menor.estoque,
+            )
+          : null,
+      maiorEstoque: maior != null
+          ? ExtremoEstoque(
+              produtoId: maior.id!,
+              nome: maior.nome,
+              preco: maior.preco,
+              quantidade: maior.estoque,
+            )
+          : null,
     );
   });
 
-  /// Versão simplificada da regra do backend (folga por tipo + ajuste por
-  /// forma). No uso real, o cálculo é feito pelo algoritmo em Python.
+  /// Regra de recomendação local (folga por tipo + ajuste por forma + análise
+  /// de numeração habitual). No uso conectado, o cálculo vem da API Python.
   Future<Recomendacao> recomendar({
     required int calcadoId,
     required double medidaPeCm,
+    double? numeracaoHabitual,
+    String? marcaHabitual,
   }) => _atraso(() {
     final c = _achar(calcadoId);
-    final folga = c.tipo == TipoCalcado.chuteira ? 0.6 : 1.0;
-    final ajuste = switch (c.forma) {
+    if (c.tamanhos.isEmpty) {
+      throw ApiException(
+        'Este calçado não possui tabela de medidas cadastrada.',
+        status: 400,
+      );
+    }
+
+    final folgaBase = c.tipo == TipoCalcado.chuteira ? 0.6 : 1.0;
+    final ajusteForma = switch (c.forma) {
       FormaCalcado.estreita => 0.3,
       FormaCalcado.padrao => 0.0,
       FormaCalcado.larga => -0.2,
     };
-    final alvo = medidaPeCm + folga + ajuste;
+    final alvo = medidaPeCm + folgaBase + ajusteForma;
 
     final t = c.tamanhos;
     var i = t.indexWhere((m) => m.comprimentoCm >= alvo - 1e-9);
-    if (i < 0) i = t.length - 1;
+    final acimaDaTabela = i < 0;
+    if (acimaDaTabela) i = t.length - 1;
+
+    final escolhido = t[i];
+    final folgaReal = double.parse(
+      (escolhido.comprimentoCm - medidaPeCm).toStringAsFixed(1),
+    );
+
+    final notas = <String>[
+      if (acimaDaTabela)
+        'A medida informada fica no limite superior da grade cadastrada.'
+      else
+        'Palmilha interna de ${Formato.cm(escolhido.comprimentoCm)} '
+            '(folga de ${Formato.cm(folgaReal)} para forma ${c.forma.rotulo.toLowerCase()}).',
+    ];
+
+    if (numeracaoHabitual != null) {
+      final dif = escolhido.numeracao - numeracaoHabitual;
+      final refMarca = (marcaHabitual != null && marcaHabitual.isNotEmpty)
+          ? ' ($marcaHabitual)'
+          : '';
+      if (dif.abs() >= 0.5) {
+        notas.add(
+          dif > 0
+              ? 'Sugerimos numeração acima da habitual ${Formato.numeracao(numeracaoHabitual)}$refMarca para preservar o conforto.'
+              : 'Este modelo possui forma mais ampla que a habitual ${Formato.numeracao(numeracaoHabitual)}$refMarca.',
+        );
+      } else {
+        notas.add(
+          'Compatível com a numeração habitual ${Formato.numeracao(numeracaoHabitual)}$refMarca do cliente.',
+        );
+      }
+    }
 
     return Recomendacao(
-      tamanho: t[i].numeracao,
+      tamanho: escolhido.numeracao,
       alternativa: i + 1 < t.length ? t[i + 1].numeracao : null,
-      folgaCm: double.parse(
-        (t[i].comprimentoCm - medidaPeCm).toStringAsFixed(1),
-      ),
-      observacao:
-          'Cálculo de demonstração. No uso real, este resultado vem do algoritmo em Python.',
+      folgaCm: folgaReal,
+      observacao: notas.join(' '),
     );
   });
 }

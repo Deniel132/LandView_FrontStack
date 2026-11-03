@@ -54,19 +54,64 @@ class ResumoDashboard {
       );
 }
 
-/// Resposta de GET /dashboard.
+/// Produto com menor ou maior estoque, vindo de `GET /dashboard/` da API.
+class ExtremoEstoque {
+  final int produtoId;
+  final String nome;
+  final double preco;
+  final int quantidade;
+
+  const ExtremoEstoque({
+    required this.produtoId,
+    required this.nome,
+    required this.preco,
+    required this.quantidade,
+  });
+
+  factory ExtremoEstoque.fromJson(Map<String, dynamic> json) => ExtremoEstoque(
+        produtoId: (json['product_id'] as num).toInt(),
+        nome: json['product_name'] as String,
+        preco: (json['unit_value'] as num).toDouble(),
+        quantidade: (json['quantity'] as num).toInt(),
+      );
+
+  static ExtremoEstoque? talvez(dynamic json) =>
+      json is Map<String, dynamic> ? ExtremoEstoque.fromJson(json) : null;
+}
+
+/// Painel da loja: indicadores calculados pelo app + destaques da API.
 class Dashboard {
   final ResumoDashboard resumo;
   final List<ItemDashboard> maisVendidos;
   final List<ItemDashboard> estoqueBaixo;
   final List<ItemDashboard> estoqueAlto;
 
+  /// `lowest_stock` e `highest_stock` de `GET /dashboard/`. Ficam nulos se a
+  /// rota não responder (o restante do painel continua funcionando).
+  final ExtremoEstoque? menorEstoque;
+  final ExtremoEstoque? maiorEstoque;
+
   const Dashboard({
     required this.resumo,
     required this.maisVendidos,
     required this.estoqueBaixo,
     required this.estoqueAlto,
+    this.menorEstoque,
+    this.maiorEstoque,
   });
+
+  Dashboard copyWith({
+    ExtremoEstoque? menorEstoque,
+    ExtremoEstoque? maiorEstoque,
+  }) =>
+      Dashboard(
+        resumo: resumo,
+        maisVendidos: maisVendidos,
+        estoqueBaixo: estoqueBaixo,
+        estoqueAlto: estoqueAlto,
+        menorEstoque: menorEstoque ?? this.menorEstoque,
+        maiorEstoque: maiorEstoque ?? this.maiorEstoque,
+      );
 
   static List<ItemDashboard> _itens(dynamic valor) => ((valor as List?) ?? [])
       .map((e) => ItemDashboard.fromJson(e as Map<String, dynamic>))
@@ -77,5 +122,7 @@ class Dashboard {
         maisVendidos: _itens(json['mais_vendidos']),
         estoqueBaixo: _itens(json['estoque_baixo']),
         estoqueAlto: _itens(json['estoque_alto']),
+        menorEstoque: ExtremoEstoque.talvez(json['lowest_stock']),
+        maiorEstoque: ExtremoEstoque.talvez(json['highest_stock']),
       );
 }

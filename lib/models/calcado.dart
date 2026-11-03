@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:typed_data';
 
 /// Tipo do calçado. O `valor` é exatamente o texto que a API usa no JSON.
@@ -33,25 +34,54 @@ enum FormaCalcado {
   );
 }
 
-/// Uma linha da tabela de medidas: numeração e comprimento interno em cm.
+/// Uma linha da tabela de medidas: numeração, comprimento interno em cm
+/// e quantidade individual disponível naquele tamanho.
 class MedidaTamanho {
   final double numeracao;
   final double comprimentoCm;
+  final int? estoque;
 
-  const MedidaTamanho({required this.numeracao, required this.comprimentoCm});
+  const MedidaTamanho({
+    required this.numeracao,
+    required this.comprimentoCm,
+    this.estoque,
+  });
+
+  MedidaTamanho copyWith({
+    double? numeracao,
+    double? comprimentoCm,
+    int? estoque,
+  }) => MedidaTamanho(
+    numeracao: numeracao ?? this.numeracao,
+    comprimentoCm: comprimentoCm ?? this.comprimentoCm,
+    estoque: estoque ?? this.estoque,
+  );
 
   factory MedidaTamanho.fromJson(Map<String, dynamic> json) => MedidaTamanho(
     numeracao: (json['numeracao'] as num).toDouble(),
     comprimentoCm: (json['comprimento_cm'] as num).toDouble(),
+    estoque: (json['estoque'] as num?)?.toInt(),
   );
 
   Map<String, dynamic> toJson() => {
     'numeracao': numeracao,
     'comprimento_cm': comprimentoCm,
+    if (estoque != null) 'estoque': estoque,
   };
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is MedidaTamanho &&
+          other.numeracao == numeracao &&
+          other.comprimentoCm == comprimentoCm &&
+          other.estoque == estoque;
+
+  @override
+  int get hashCode => Object.hash(numeracao, comprimentoCm, estoque);
 }
 
-/// Modelo de calçado vendido pela loja (recurso do CRUD).
+/// Modelo de calçado gerenciado no controle de estoque.
 class Calcado {
   final int? id; // nulo até a API criar o registro
   final String nome;
@@ -62,7 +92,7 @@ class Calcado {
   final String? imagemUrl;
   // Bytes permitem pré-visualizar e reutilizar fotos locais no modo demo.
   final Uint8List? imagemBytes;
-  final int estoque; // unidades disponíveis
+  final int estoque; // unidades totais disponíveis
   final List<MedidaTamanho> tamanhos;
 
   const Calcado({
@@ -84,17 +114,137 @@ class Calcado {
 
   bool get temImagemUrl => imagemUrl != null && imagemUrl!.trim().isNotEmpty;
 
-  Calcado copyWith({int? estoque}) => Calcado(
-    id: id,
-    nome: nome,
-    marca: marca,
-    tipo: tipo,
-    forma: forma,
-    preco: preco,
-    imagemUrl: imagemUrl,
-    imagemBytes: imagemBytes,
+  bool get esgotado => estoque <= 0;
+  bool get estoqueBaixo => estoque > 0 && estoque <= 5;
+  bool get estoqueAlto => estoque >= 40;
+
+  double get valorTotalEstoque => preco * estoque;
+
+  /// Retorna a grade com a quantidade individual de cada numeração sincronizada
+  /// com o estoque total do calçado.
+  List<MedidaTamanho> get tamanhosComEstoque {
+    if (tamanhos.isEmpty) return const [];
+    final totalAlvo = estoque < 0 ? 0 : estoque;
+    final temEstoqueIndividual = tamanhos.any((t) => t.estoque != null);
+
+    if (!temEstoqueIndividual) {
+      final base = totalAlvo ~/ tamanhos.length;
+      final resto = totalAlvo % tamanhos.length;
+      return [
+        for (var i = 0; i < tamanhos.length; i++)
+          tamanhos[i].copyWith(estoque: base + (i < resto ? 1 : 0)),
+      ];
+    }
+
+    final qtds = [
+      for (final t in tamanhos) (t.estoque ?? 0) < 0 ? 0 : (t.estoque ?? 0),
+    ];
+    var soma = qtds.fold<int>(0, (s, v) => s + v);
+
+    if (soma < totalAlvo) {
+      var falta = totalAlvo - soma;
+      var idx = 0;
+      while (falta > 0) {
+        qtds[idx % qtds.length]++;
+        falta--;
+        idx++;
+      }
+    } else if (soma > totalAlvo) {
+      var excesso = soma - totalAlvo;
+      var idx = qtds.length - 1;
+      while (excesso > 0 && qtds.any((q) => q > 0)) {
+        final pos = idx % qtds.length;
+        if (qtds[pos] > 0) {
+          qtds[pos]--;
+          excesso--;
+        }
+        idx--;
+        if (idx < 0) idx = qtds.length - 1;
+      }
+    }
+
+    return [
+      for (var i = 0; i < tamanhos.length; i++)
+        tamanhos[i].copyWith(estoque: qtds[i]),
+    ];
+  }
+
+  /// Quantidade de numerações que possuem pelo menos 1 par em estoque.
+  int get totalTamanhosDisponiveis =>
+      tamanhosComEstoque.where((t) => (t.estoque ?? 0) > 0).length;
+
+  /// Numerações que estão zeradas na grade.
+  List<MedidaTamanho> get tamanhosZerados =>
+      tamanhosComEstoque.where((t) => (t.estoque ?? 0) == 0).toList();
+
+  /// Atualiza a quantidade de uma numeração específica e recalcula o total.
+  Calcado atualizarEstoqueDoTamanho(double numeracao, int novaQuantidade) {
+    final qtdLimpa = novaQuantidade < 0 ? 0 : novaQuantidade;
+    final novaGrade = [
+      for (final t in tamanhosComEstoque)
+        if (t.numeracao == numeracao)
+          t.copyWith(estoque: qtdLimpa)
+        else
+          t,
+    ];
+    final novoTotal = novaGrade.fold<int>(0, (s, t) => s + (t.estoque ?? 0));
+    return copyWith(estoque: novoTotal, tamanhos: novaGrade);
+  }
+
+  /// Desconta unidades de uma numeração específica (e o excedente das demais, se houver).
+  Calcado descontarDoTamanho(double? numeracao, int quantidadeBaixa) {
+    final grade = [...tamanhosComEstoque];
+    if (grade.isEmpty) {
+      final novoEstoque = (estoque - quantidadeBaixa).clamp(0, 999999);
+      return copyWith(estoque: novoEstoque);
+    }
+
+    var restante = quantidadeBaixa;
+    if (numeracao != null) {
+      final idx = grade.indexWhere((t) => t.numeracao == numeracao);
+      if (idx != -1) {
+        final disp = grade[idx].estoque ?? 0;
+        final abater = restante <= disp ? restante : disp;
+        grade[idx] = grade[idx].copyWith(estoque: disp - abater);
+        restante -= abater;
+      }
+    }
+
+    for (var i = 0; i < grade.length && restante > 0; i++) {
+      final disp = grade[i].estoque ?? 0;
+      if (disp > 0) {
+        final abater = restante <= disp ? restante : disp;
+        grade[i] = grade[i].copyWith(estoque: disp - abater);
+        restante -= abater;
+      }
+    }
+
+    final novoTotal = grade.fold<int>(0, (s, t) => s + (t.estoque ?? 0));
+    return copyWith(estoque: novoTotal, tamanhos: grade);
+  }
+
+  Calcado copyWith({
+    int? id,
+    String? nome,
+    String? marca,
+    TipoCalcado? tipo,
+    FormaCalcado? forma,
+    double? preco,
+    String? imagemUrl,
+    Uint8List? imagemBytes,
+    int? estoque,
+    List<MedidaTamanho>? tamanhos,
+  }) => Calcado(
+    id: id ?? this.id,
+    nome: nome ?? this.nome,
+    marca: marca ?? this.marca,
+    tipo: tipo ?? this.tipo,
+    forma: forma ?? this.forma,
+    preco: preco ?? this.preco,
+    imagemUrl: imagemUrl ?? this.imagemUrl,
+    imagemBytes: imagemBytes ?? this.imagemBytes,
     estoque: estoque ?? this.estoque,
-    tamanhos: tamanhos,
+    tamanhos: tamanhos ?? this.tamanhos,
   );
 
   factory Calcado.fromJson(Map<String, dynamic> json) {
@@ -104,6 +254,17 @@ class Calcado {
             .toList()
           ..sort((a, b) => a.numeracao.compareTo(b.numeracao));
 
+    final rawUrl = json['imagem_url'] as String?;
+    Uint8List? bytes;
+    if (rawUrl != null && rawUrl.startsWith('data:image')) {
+      final idx = rawUrl.indexOf('base64,');
+      if (idx != -1) {
+        try {
+          bytes = base64Decode(rawUrl.substring(idx + 7));
+        } catch (_) {}
+      }
+    }
+
     return Calcado(
       id: json['id'] as int?,
       nome: json['nome'] as String,
@@ -111,7 +272,8 @@ class Calcado {
       tipo: TipoCalcado.doValor(json['tipo'] as String?),
       forma: FormaCalcado.doValor(json['forma'] as String?),
       preco: (json['preco'] as num).toDouble(),
-      imagemUrl: json['imagem_url'] as String?,
+      imagemUrl: rawUrl,
+      imagemBytes: bytes,
       estoque: (json['estoque'] as num?)?.toInt() ?? 0,
       tamanhos: tabela,
     );

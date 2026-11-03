@@ -3,7 +3,7 @@
 O que o **app Flutter espera** da API FastAPI. Se o backend mudar algo aqui, avisar quem faz o app
 (ou ajustar `lib/models/` e `lib/services/api_service.dart`).
 
-- Base URL local: `http://localhost:8000`
+- Base URL Render: `https://landview-api.onrender.com`
 - Formato: JSON (UTF-8)
 - **Sem barra no final** das rotas do contrato original (`/calcados`, não `/calcados/`).
 - Na API atual, `/api/user/login` e `/api/user/` são rotas públicas.
@@ -12,20 +12,26 @@ O que o **app Flutter espera** da API FastAPI. Se o backend mudar algo aqui, avi
 
 O app foi adaptado ao repositório público atual: login em
 `POST /api/user/login` com `email` e `password`, e criação de conta em
-`POST /api/user/` com `email`, `password` e `role: "USER"`. O login retorna
+`POST /api/user/` com `email`, `password` e `role: "user"`. O login retorna
 uma string JSON contendo o token, e o cadastro aceita apenas e-mail e senha,
 por isso a tela não pede nome. O Flutter retorna ao login após criar a conta.
 
-O backend atual usa um token próprio sem expiração, não JWT, e não retorna os
-dados completos do usuário no login. Ele já usa bcrypt para as senhas. O enum
-do backend aceita o perfil `USER`.
+O backend atual usa um token próprio retornado no login (`POST /api/user/login`).
+As senhas usam hash bcrypt com suporte a cifra `enc:v1:` originada no frontend.
+O enum do backend aceita os perfis `SELLER`, `OWNER` e `USER`. As rotas protegidas
+esperam o cabeçalho `Authorization: Bearer <token>`.
+
+O backend também disponibiliza:
+- `GET /dashboard/`: retorna `lowest_stock` e `highest_stock` diretamente da API.
+- `POST /stock-exit/`: registra saídas de estoque vinculadas ao usuário logado.
+- `GET /stock-exit/`: histórico paginado de saídas para auditoria (`page`, `page_size`, `id_product`, `id_stock`, `id_user`).
+- CORS configurado com `allow_origin_regex` para permitir qualquer porta de desenvolvimento local (`http://localhost:*`).
 
 No backend consultado, credenciais incorretas e e-mail duplicado lançam
 `ValueError`, que pode virar erro `500` no FastAPI; o ideal é responder `401`
 no login e `409` (ou `400`) no cadastro, ambos com `detail` em português.
 Para Flutter Web, a origem CORS configurada no backend também precisa incluir a
-origem local usada pelo navegador; `http://localhost:8000` não é a origem da
-interface Flutter Web.
+origem local usada pelo navegador e a origem publicada do frontend.
 
 O restante desta seção descreve o contrato originalmente combinado, que ainda
 não corresponde à implementação atual do backend.

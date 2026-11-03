@@ -3,12 +3,36 @@ import '../main.dart';
 import '../models/calcado.dart';
 import '../services/api_service.dart';
 import '../theme/app_theme.dart';
+import '../utils/formato.dart';
 import '../widgets/cartao_calcado.dart';
+import '../widgets/estados.dart';
 import '../widgets/logo_loja.dart';
 import 'cadastro_page.dart';
 import 'detalhe_page.dart';
 
 enum _StatusApi { conectando, online, offline, demonstracao }
+
+enum _FiltroEstoque {
+  todos('Todos'),
+  baixo('Estoque baixo'),
+  esgotado('Esgotados'),
+  excesso('Em excesso');
+
+  final String rotulo;
+  const _FiltroEstoque(this.rotulo);
+}
+
+enum _Ordenacao {
+  padrao('Relevância'),
+  nomeAz('Nome (A–Z)'),
+  menorEstoque('Menor estoque'),
+  maiorEstoque('Maior estoque'),
+  menorPreco('Menor preço'),
+  maiorPreco('Maior preço');
+
+  final String rotulo;
+  const _Ordenacao(this.rotulo);
+}
 
 class CatalogoPage extends StatefulWidget {
   const CatalogoPage({super.key});
@@ -23,6 +47,8 @@ class _CatalogoPageState extends State<CatalogoPage> {
   String? _erro;
 
   TipoCalcado? _filtroTipo;
+  _FiltroEstoque _filtroEstoque = _FiltroEstoque.todos;
+  _Ordenacao _ordenacao = _Ordenacao.padrao;
   String _busca = '';
   final _buscaController = TextEditingController();
 
@@ -69,14 +95,57 @@ class _CatalogoPageState extends State<CatalogoPage> {
   /// Busca e filtros só fazem sentido quando existe lista para filtrar.
   bool get _temDados => !_carregando && _erro == null && _calcados.isNotEmpty;
 
+  bool get _temFiltroAtivo =>
+      _filtroTipo != null ||
+      _filtroEstoque != _FiltroEstoque.todos ||
+      _busca.trim().isNotEmpty;
+
+  void _limparFiltros() {
+    _buscaController.clear();
+    setState(() {
+      _busca = '';
+      _filtroTipo = null;
+      _filtroEstoque = _FiltroEstoque.todos;
+      _ordenacao = _Ordenacao.padrao;
+    });
+  }
+
   List<Calcado> get _visiveis {
     final termo = _busca.trim().toLowerCase();
-    return _calcados.where((c) {
+    final filtrados = _calcados.where((c) {
       if (_filtroTipo != null && c.tipo != _filtroTipo) return false;
+      switch (_filtroEstoque) {
+        case _FiltroEstoque.todos:
+          break;
+        case _FiltroEstoque.baixo:
+          if (c.estoque > 5) return false;
+        case _FiltroEstoque.esgotado:
+          if (!c.esgotado) return false;
+        case _FiltroEstoque.excesso:
+          if (!c.estoqueAlto) return false;
+      }
       return termo.isEmpty ||
           c.nome.toLowerCase().contains(termo) ||
           c.marca.toLowerCase().contains(termo);
     }).toList();
+
+    switch (_ordenacao) {
+      case _Ordenacao.padrao:
+        break;
+      case _Ordenacao.nomeAz:
+        filtrados.sort(
+          (a, b) => a.nome.toLowerCase().compareTo(b.nome.toLowerCase()),
+        );
+      case _Ordenacao.menorEstoque:
+        filtrados.sort((a, b) => a.estoque.compareTo(b.estoque));
+      case _Ordenacao.maiorEstoque:
+        filtrados.sort((a, b) => b.estoque.compareTo(a.estoque));
+      case _Ordenacao.menorPreco:
+        filtrados.sort((a, b) => a.preco.compareTo(b.preco));
+      case _Ordenacao.maiorPreco:
+        filtrados.sort((a, b) => b.preco.compareTo(a.preco));
+    }
+    return filtrados;
   }
 
   void _avisar(String mensagem) {
@@ -112,7 +181,13 @@ class _CatalogoPageState extends State<CatalogoPage> {
   @override
   Widget build(BuildContext context) {
     final isDark = context.isDark;
-    final compacto = MediaQuery.sizeOf(context).height < 460;
+    final compacto = MediaQuery.sizeOf(context).height < 520;
+
+    final totalUnidades = _calcados.fold<int>(0, (s, c) => s + c.estoque);
+    final valorTotalEstoque = _calcados.fold<double>(
+      0,
+      (s, c) => s + c.valorTotalEstoque,
+    );
 
     return Scaffold(
       appBar: AppBar(
@@ -122,7 +197,7 @@ class _CatalogoPageState extends State<CatalogoPage> {
           mainAxisSize: MainAxisSize.min,
           children: [
             Text(
-              'Controle De Estoque',
+              'Catálogo & Estoque',
               style: TextStyle(
                 fontSize: 16.5,
                 fontWeight: FontWeight.w700,
@@ -131,7 +206,7 @@ class _CatalogoPageState extends State<CatalogoPage> {
               ),
             ),
             Text(
-              'Verificacao de estoque por tipo de calcados',
+              'Gestão de modelos, estoque e tabela de medidas',
               style: TextStyle(fontSize: 12, color: context.textMuted),
             ),
           ],
@@ -177,6 +252,8 @@ class _CatalogoPageState extends State<CatalogoPage> {
                   chuteiras: _calcados
                       .where((c) => c.tipo == TipoCalcado.chuteira)
                       .length,
+                  unidades: totalUnidades,
+                  valorEstoque: valorTotalEstoque,
                   status: _status,
                   compacto: compacto,
                 ),
@@ -189,22 +266,101 @@ class _CatalogoPageState extends State<CatalogoPage> {
                     16,
                     compacto ? 6 : 10,
                   ),
-                  child: TextField(
-                    controller: _buscaController,
-                    onChanged: (v) => setState(() => _busca = v),
-                    decoration: InputDecoration(
-                      hintText: 'Buscar por modelo ou marca',
-                      prefixIcon: const Icon(Icons.search_rounded),
-                      suffixIcon: _busca.isEmpty
-                          ? null
-                          : IconButton(
-                              icon: const Icon(Icons.close_rounded),
-                              onPressed: () {
-                                _buscaController.clear();
-                                setState(() => _busca = '');
-                              },
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          controller: _buscaController,
+                          onChanged: (v) => setState(() => _busca = v),
+                          decoration: InputDecoration(
+                            hintText: 'Buscar por modelo ou marca',
+                            prefixIcon: const Icon(Icons.search_rounded),
+                            suffixIcon: _busca.isEmpty
+                                ? null
+                                : IconButton(
+                                    tooltip: 'Limpar busca',
+                                    icon: const Icon(Icons.close_rounded),
+                                    onPressed: () {
+                                      _buscaController.clear();
+                                      setState(() => _busca = '');
+                                    },
+                                  ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      PopupMenuButton<_Ordenacao>(
+                        tooltip: 'Ordenar catálogo',
+                        initialValue: _ordenacao,
+                        onSelected: (v) => setState(() => _ordenacao = v),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(AppTheme.radius),
+                        ),
+                        itemBuilder: (_) => [
+                          for (final ord in _Ordenacao.values)
+                            PopupMenuItem<_Ordenacao>(
+                              value: ord,
+                              child: Row(
+                                children: [
+                                  Icon(
+                                    _ordenacao == ord
+                                        ? Icons.radio_button_checked_rounded
+                                        : Icons.radio_button_unchecked_rounded,
+                                    size: 18,
+                                    color: _ordenacao == ord
+                                        ? context.accent
+                                        : context.textMuted,
+                                  ),
+                                  const SizedBox(width: 10),
+                                  Text(ord.rotulo),
+                                ],
+                              ),
                             ),
-                    ),
+                        ],
+                        child: Container(
+                          height: 52,
+                          padding: const EdgeInsets.symmetric(horizontal: 14),
+                          decoration: BoxDecoration(
+                            color: _ordenacao != _Ordenacao.padrao
+                                ? AppColors.brand.withValues(alpha: 0.14)
+                                : context.cardSurface,
+                            borderRadius: BorderRadius.circular(
+                              AppTheme.radius,
+                            ),
+                            border: Border.all(
+                              color: _ordenacao != _Ordenacao.padrao
+                                  ? context.accent
+                                  : context.hairline,
+                            ),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                Icons.sort_rounded,
+                                size: 20,
+                                color: _ordenacao != _Ordenacao.padrao
+                                    ? context.accent
+                                    : context.textMuted,
+                              ),
+                              if (!compacto) ...[
+                                const SizedBox(width: 6),
+                                Text(
+                                  _ordenacao.rotulo,
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w600,
+                                    color: _ordenacao != _Ordenacao.padrao
+                                        ? context.accent
+                                        : context.textStrong,
+                                  ),
+                                ),
+                              ],
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
                 SizedBox(
@@ -213,9 +369,19 @@ class _CatalogoPageState extends State<CatalogoPage> {
                     scrollDirection: Axis.horizontal,
                     padding: const EdgeInsets.symmetric(horizontal: 16),
                     children: [
-                      _chip('Todos', null),
-                      _chip('Tênis', TipoCalcado.tenis),
-                      _chip('Chuteiras', TipoCalcado.chuteira),
+                      _chipTipo('Todos', null),
+                      _chipTipo('Tênis', TipoCalcado.tenis),
+                      _chipTipo('Chuteiras', TipoCalcado.chuteira),
+                      Container(
+                        width: 1,
+                        margin: const EdgeInsets.symmetric(
+                          horizontal: 6,
+                          vertical: 8,
+                        ),
+                        color: context.hairline,
+                      ),
+                      for (final f in _FiltroEstoque.values)
+                        if (f != _FiltroEstoque.todos) _chipEstoque(f),
                     ],
                   ),
                 ),
@@ -237,7 +403,7 @@ class _CatalogoPageState extends State<CatalogoPage> {
     );
   }
 
-  Widget _chip(String rotulo, TipoCalcado? tipo) {
+  Widget _chipTipo(String rotulo, TipoCalcado? tipo) {
     return Padding(
       padding: const EdgeInsets.only(right: 8),
       child: ChoiceChip(
@@ -251,20 +417,51 @@ class _CatalogoPageState extends State<CatalogoPage> {
     );
   }
 
+  Widget _chipEstoque(_FiltroEstoque filtro) {
+    final selecionado = _filtroEstoque == filtro;
+    return Padding(
+      padding: const EdgeInsets.only(right: 8),
+      child: ChoiceChip(
+        label: Text(filtro.rotulo),
+        selected: selecionado,
+        showCheckmark: false,
+        selectedColor: AppColors.hazard.withValues(alpha: 0.18),
+        side: BorderSide(color: context.hairline),
+        onSelected: (_) => setState(
+          () => _filtroEstoque = selecionado ? _FiltroEstoque.todos : filtro,
+        ),
+      ),
+    );
+  }
+
   Widget _conteudo() {
     if (_carregando) return const Center(child: CircularProgressIndicator());
     if (_erro != null) {
-      return _EstadoErro(mensagem: _erro!, aoTentar: () => _carregar());
+      return EstadoErro(
+        titulo: 'Não foi possível carregar o catálogo',
+        mensagem: _erro!,
+        aoTentar: () => _carregar(),
+      );
     }
-    if (_calcados.isEmpty) return _EstadoVazio(aoCadastrar: _abrirCadastro);
+    if (_calcados.isEmpty) {
+      return EstadoVazio(
+        icone: Icons.inventory_2_outlined,
+        titulo: 'Nenhum modelo cadastrado',
+        subtitulo:
+            'Cadastre o primeiro tênis ou chuteira com a tabela de medidas.',
+        rotuloAcao: 'Cadastrar modelo',
+        aoAcionar: _abrirCadastro,
+      );
+    }
 
     final lista = _visiveis;
     if (lista.isEmpty) {
-      return Center(
-        child: Text(
-          'Nenhum modelo encontrado.',
-          style: TextStyle(fontSize: 14, color: context.textMuted),
-        ),
+      return EstadoVazio(
+        icone: Icons.search_off_rounded,
+        titulo: 'Nenhum modelo encontrado',
+        subtitulo: 'Ajuste os termos da busca ou limpe os filtros selecionados.',
+        rotuloAcao: _temFiltroAtivo ? 'Limpar filtros' : null,
+        aoAcionar: _temFiltroAtivo ? _limparFiltros : null,
       );
     }
 
@@ -283,11 +480,13 @@ class _CatalogoPageState extends State<CatalogoPage> {
   }
 }
 
-/// Painel escuro com a contagem do catálogo e o estado da conexão.
+/// Painel escuro com a contagem do catálogo, estoque total e estado da conexão.
 class _PainelCatalogo extends StatelessWidget {
   final int total;
   final int tenis;
   final int chuteiras;
+  final int unidades;
+  final double valorEstoque;
   final _StatusApi status;
   final bool compacto;
 
@@ -295,6 +494,8 @@ class _PainelCatalogo extends StatelessWidget {
     required this.total,
     required this.tenis,
     required this.chuteiras,
+    required this.unidades,
+    required this.valorEstoque,
     required this.status,
     required this.compacto,
   });
@@ -308,8 +509,6 @@ class _PainelCatalogo extends StatelessWidget {
       _StatusApi.demonstracao => (AppColors.infoLight, 'Demonstração'),
     };
 
-    // Sem conexão não dá para afirmar que o catálogo está vazio:
-    // mostrar "0" seria uma informação falsa. O traço diz "não sei".
     final online =
         status == _StatusApi.online || status == _StatusApi.demonstracao;
     String n(int v) => online ? '$v' : '—';
@@ -366,7 +565,7 @@ class _PainelCatalogo extends StatelessWidget {
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    '${n(total)} modelos · ${n(tenis)} tênis · ${n(chuteiras)} chuteiras',
+                    '${n(total)} modelos · ${n(tenis)} tênis · ${n(chuteiras)} chuteiras · ${n(unidades)} un.',
                     style: const TextStyle(
                       color: Colors.white,
                       fontSize: 13,
@@ -439,16 +638,21 @@ class _PainelCatalogo extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(height: 14),
-                  Row(
+                  Wrap(
+                    spacing: 20,
+                    runSpacing: 10,
+                    crossAxisAlignment: WrapCrossAlignment.center,
                     children: [
                       _Leitura(rotulo: 'Tênis', valor: n(tenis)),
-                      Container(
-                        width: 1,
-                        height: 28,
-                        margin: const EdgeInsets.symmetric(horizontal: 20),
-                        color: Colors.white.withValues(alpha: 0.12),
-                      ),
+                      const _DivisorVertical(),
                       _Leitura(rotulo: 'Chuteiras', valor: n(chuteiras)),
+                      const _DivisorVertical(),
+                      _Leitura(rotulo: 'Unidades', valor: n(unidades)),
+                      const _DivisorVertical(),
+                      _Leitura(
+                        rotulo: 'Valor em estoque',
+                        valor: online ? Formato.real(valorEstoque) : '—',
+                      ),
                     ],
                   ),
                   const SizedBox(height: 12),
@@ -470,6 +674,19 @@ class _PainelCatalogo extends StatelessWidget {
   }
 }
 
+class _DivisorVertical extends StatelessWidget {
+  const _DivisorVertical();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 1,
+      height: 28,
+      color: Colors.white.withValues(alpha: 0.12),
+    );
+  }
+}
+
 class _Leitura extends StatelessWidget {
   final String rotulo;
   final String valor;
@@ -484,7 +701,7 @@ class _Leitura extends StatelessWidget {
           valor,
           style: const TextStyle(
             color: Colors.white,
-            fontSize: 17,
+            fontSize: 16,
             fontWeight: FontWeight.w600,
           ),
         ),
@@ -496,97 +713,6 @@ class _Leitura extends StatelessWidget {
           ),
         ),
       ],
-    );
-  }
-}
-
-class _EstadoErro extends StatelessWidget {
-  final String mensagem;
-  final VoidCallback aoTentar;
-  const _EstadoErro({required this.mensagem, required this.aoTentar});
-
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 36),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.cloud_off_rounded, size: 40, color: context.textMuted),
-            const SizedBox(height: 14),
-            Text(
-              'Não foi possível carregar o catálogo',
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.w600,
-                color: context.textStrong,
-              ),
-            ),
-            const SizedBox(height: 6),
-            Text(
-              mensagem,
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                fontSize: 13.5,
-                height: 1.4,
-                color: context.textMuted,
-              ),
-            ),
-            const SizedBox(height: 18),
-            OutlinedButton.icon(
-              onPressed: aoTentar,
-              icon: const Icon(Icons.refresh_rounded, size: 18),
-              label: const Text('Tentar de novo'),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _EstadoVazio extends StatelessWidget {
-  final VoidCallback aoCadastrar;
-  const _EstadoVazio({required this.aoCadastrar});
-
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 40),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              Icons.inventory_2_outlined,
-              size: 40,
-              color: context.textMuted,
-            ),
-            const SizedBox(height: 14),
-            Text(
-              'Nenhum modelo cadastrado',
-              style: TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.w600,
-                color: context.textStrong,
-              ),
-            ),
-            const SizedBox(height: 6),
-            Text(
-              'Cadastre o primeiro tênis ou chuteira com a tabela de medidas.',
-              textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 13.5, color: context.textMuted),
-            ),
-            const SizedBox(height: 18),
-            OutlinedButton(
-              onPressed: aoCadastrar,
-              child: const Text('Cadastrar modelo'),
-            ),
-          ],
-        ),
-      ),
     );
   }
 }
