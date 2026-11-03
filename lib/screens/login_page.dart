@@ -3,9 +3,10 @@ import '../main.dart';
 import '../services/api_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/contato_loja.dart';
+import '../widgets/estados.dart';
 import '../widgets/logo_loja.dart';
-import 'dashboard_page.dart';
 import 'criar_conta_page.dart';
+import 'dashboard_page.dart';
 
 /// Primeira tela do app. Envia e-mail e senha para a API e guarda o token
 /// retornado na sessão para acompanhar as requisições seguintes.
@@ -101,7 +102,7 @@ class _LoginPageState extends State<LoginPage> {
                       const _Marca(),
                       const SizedBox(height: 28),
                       if (widget.sessaoExpirada) ...[
-                        const _Faixa(
+                        const FaixaAviso(
                           mensagem: 'Sua sessão expirou. Entre novamente.',
                           cor: AppColors.hazard,
                           icone: Icons.lock_clock_outlined,
@@ -142,7 +143,7 @@ class _LoginPageState extends State<LoginPage> {
                               ),
                               const SizedBox(height: 4),
                               Text(
-                                'Acesse com a conta da loja.',
+                                'Acesse o painel e o catálogo da loja.',
                                 style: TextStyle(
                                   fontSize: 13.5,
                                   color: context.textMuted,
@@ -202,11 +203,7 @@ class _LoginPageState extends State<LoginPage> {
                               ),
                               if (_erro != null) ...[
                                 const SizedBox(height: 16),
-                                _Faixa(
-                                  mensagem: _erro!,
-                                  cor: AppColors.danger,
-                                  icone: Icons.error_outline_rounded,
-                                ),
+                                FaixaAviso.erro(mensagem: _erro!),
                               ],
                               const SizedBox(height: 22),
                               SizedBox(
@@ -243,7 +240,7 @@ class _LoginPageState extends State<LoginPage> {
                                     const SizedBox(width: 8),
                                     Expanded(
                                       child: Text(
-                                        'Modo demonstração: qualquer e-mail válido e qualquer senha funcionam.',
+                                        'Modo demonstração ativo: entre com qualquer e-mail válido e qualquer senha.',
                                         style: TextStyle(
                                           fontSize: 12.5,
                                           height: 1.35,
@@ -317,51 +314,10 @@ class _Marca extends StatelessWidget {
         ),
         const SizedBox(height: 4),
         Text(
-          'Artigos Esportivos',
+          'Artigos Esportivos · Provador & Estoque',
           style: TextStyle(fontSize: 13.5, color: context.textMuted),
         ),
       ],
-    );
-  }
-}
-
-class _Faixa extends StatelessWidget {
-  final String mensagem;
-  final Color cor;
-  final IconData icone;
-
-  const _Faixa({
-    required this.mensagem,
-    required this.cor,
-    required this.icone,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: cor.withValues(alpha: 0.1),
-        borderRadius: BorderRadius.circular(AppTheme.radius),
-        border: Border.all(color: cor.withValues(alpha: 0.35)),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(icone, size: 20, color: cor),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Text(
-              mensagem,
-              style: TextStyle(
-                fontSize: 13.5,
-                height: 1.4,
-                color: context.textStrong,
-              ),
-            ),
-          ),
-        ],
-      ),
     );
   }
 }
