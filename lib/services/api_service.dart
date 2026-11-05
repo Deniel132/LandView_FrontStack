@@ -1,59 +1,85 @@
+// Biblioteca padrão do Dart para operações assíncronas (Future, TimeoutException).
 import 'dart:async';
+// Biblioteca padrão do Dart para codificação e decodificação JSON e conversão Base64 e UTF-8.
 import 'dart:convert';
+// Biblioteca padrão do Dart para manipulação de bytes de memória (Uint8List).
 import 'dart:typed_data';
 
+// Pacote oficial HTTP para envio de requisições de rede RESTful.
 import 'package:http/http.dart' as http;
 
+// Modelo que representa um calçado/tênis/chuteira no catálogo.
 import '../models/calcado.dart';
+// Modelo que encapsula os dados consolidados do painel administrativo.
 import '../models/dashboard.dart';
+// Modelo de retorno do provador virtual com tamanho recomendado e observações.
 import '../models/recomendacao.dart';
+// Modelo que representa um registro de auditoria de saída/baixa de estoque.
 import '../models/saida_estoque.dart';
+// Modelo de usuário autenticado do sistema com e-mail e perfil de acesso.
 import '../models/usuario.dart';
+// Modelo de registro e recibo de uma venda efetuada na loja.
 import '../models/venda.dart';
+// Utilitário para criptografar senhas no padrão do backend (enc:v1:...).
 import '../utils/criptografia_senha.dart';
+// Utilitário para formatação amigável de medidas em centímetros e numerações.
 import '../utils/formato.dart';
+// Exceção customizada da aplicação para transporte de erros e status HTTP.
 import 'api_exception.dart';
+// Conjunto de dados simulados em memória para quando o app roda em modo de demonstração.
 import 'dados_demo.dart';
+// Gerenciador central de sessão do usuário e persistência do token de acesso.
 import 'sessao.dart';
 
-// Quem importa o ApiService também enxerga o ApiException.
+// Reexporta a classe ApiException para que arquivos que importam ApiService possam capturá-la diretamente.
 export 'api_exception.dart';
 
-/// Única porta de saída do app para a rede. Nenhuma tela monta URL
-/// ou lê JSON por conta própria: tudo passa por aqui.
+/// Ponto único de comunicação e saída do aplicativo para a rede.
+/// Nenhuma tela monta URL, serializa cabeçalhos ou trata respostas HTTP por conta própria:
+/// todas as interações de login, catálogo, estoque, saídas e dashboard passam por esta classe.
 class ApiService {
+  // Construtor privado para impedir instanciação externa (Padrão de Projeto Singleton).
   ApiService._();
+  // Instância única global acessível em toda a aplicação.
   static final ApiService instance = ApiService._();
 
+  // Tempo limite máximo padrão de espera para requisições de rede (35 segundos para acomodar cold start do Render).
   static const _timeout = Duration(seconds: 35);
 
-  /// Conectado à API real do Render por padrão (`DEMO=false`).
-  /// Para rodar com dados fictícios locais: `--dart-define=DEMO=true`.
+  /// Flag que determina se o app roda conectado à API real ou com dados simulados locais.
+  /// Por padrão é falso (conecta à API no Render). Pode ser ativado via: `--dart-define=DEMO=true`.
   static const bool _modoDemoEnv = bool.fromEnvironment(
     'DEMO',
     defaultValue: false,
   );
+  // Permite sobrescrever o modo demonstração em tempo de execução (útil em testes automatizados).
   static bool? modoDemoOverride;
+  // Getter público que retorna o estado atual do modo de demonstração.
   static bool get modoDemo => modoDemoOverride ?? _modoDemoEnv;
 
-  /// URL publicada no Render (sem /docs no final).
-  /// Para usar outra instância sem mexer no código:
+  /// URL base oficial da API no Render (sem a barra final nem /docs).
+  /// Permite apontar para outro servidor (como localhost) via:
   ///   flutter run --dart-define=API_URL=http://localhost:8000
   static String get baseUrl {
+    // Lê a variável de compilação API_URL caso tenha sido passada via linha de comando.
     const doAmbiente = String.fromEnvironment('API_URL');
     if (doAmbiente.isNotEmpty) {
+      // Remove sufixo /docs caso o desenvolvedor tenha colado a URL do Swagger.
       return doAmbiente.replaceAll(RegExp(r'/docs/?$'), '');
     }
+    // URL de produção publicada no Render.
     return 'https://landview-api.onrender.com';
   }
 
-  // Conexão complementar com o Supabase da própria LandView_API para listagem
-  // e metadados que a API do Render não expõe em rota de coleção.
+  // URL do serviço REST do Supabase vinculado à base de dados da LandView_API,
+  // utilizado como fallback seguro para rotas de coleção e integridade de dados.
   static const String _supabaseRestUrl =
       'https://pyqtqqlhizqmmnseaqgn.supabase.co/rest/v1';
+  // Chave pública autorizada para acesso às tabelas do banco no Supabase.
   static const String _supabaseKey =
       'sb_publishable_3oalSxOHTWmQvWn9O0K96g_LLILAoKx';
 
+  /// Cabeçalhos HTTP padrão exigidos nas requisições diretas ao Supabase.
   Map<String, String> get _supabaseHeaders => {
     'Content-Type': 'application/json; charset=utf-8',
     'Accept': 'application/json',
@@ -62,7 +88,8 @@ class ApiService {
     'Prefer': 'return=representation',
   };
 
-  /// O token de sessão é enviado em requisições protegidas como Bearer.
+  /// Cabeçalhos HTTP padrão para chamadas à API principal no Render,
+  /// incluindo o token Bearer de autenticação caso o usuário já esteja logado.
   Map<String, String> get _headers => {
     'Content-Type': 'application/json; charset=utf-8',
     'Accept': 'application/json',
@@ -70,27 +97,43 @@ class ApiService {
       'Authorization': 'Bearer ${Sessao.instance.token}',
   };
 
+  // Endereço local de contingência caso o backend local esteja rodando na máquina.
   static const String _localApiUrl = 'http://127.0.0.1:8000';
 
+  // Monta a URI completa direcionada para a API principal do Render.
   Uri _uri(String caminho) => Uri.parse('$baseUrl$caminho');
+  // Monta a URI direcionada para o servidor de desenvolvimento local.
   Uri _localUri(String caminho) => Uri.parse('$_localApiUrl$caminho');
+  // Monta a URI direcionada para o banco Supabase.
   Uri _sbUri(String caminho) => Uri.parse('$_supabaseRestUrl$caminho');
 
   // --------------------------------------------------------------- Login
 
-  /// Faz login criptografando a senha no frontend (`enc:v1:...`), autentica em
-  /// `POST /api/user/login` e valida a sessão em `GET /api/user/private`.
+  /// Autentica o usuário no sistema criptografando a senha no frontend (`enc:v1:...`),
+  /// chama a rota oficial `POST /api/user/login` do Render e inicializa a sessão do app.
   Future<Usuario> login(String email, String senha) async {
+    // Se o app estiver em modo de demonstração, valida nos dados mockados locais.
     if (modoDemo) {
-      final usuario = await DadosDemo.instance.login(email);
+      // Autentica nos dados simulados
+      var usuario = await DadosDemo.instance.login(email);
+      // Verifica se o usuário definiu um nome de exibição personalizado para este e-mail
+      final nomeCustom = await Sessao.obterNomeCustomizado(email);
+      // Se houver nome personalizado salvo, aplica ao usuário logado
+      if (nomeCustom != null && nomeCustom.isNotEmpty) {
+        usuario = usuario.copyWith(nome: nomeCustom);
+      }
+      // Inicia a sessão ativa com o token de demonstração
       Sessao.instance.iniciar('token-demo', usuario);
       return usuario;
     }
 
+    // Remove espaços em branco do e-mail.
     final emailLimpo = email.trim();
+    // Criptografa a senha para envio seguro pela rede.
     final senhaCriptografada = CriptografiaSenha.criptografar(senha);
     final dynamic json;
     try {
+      // Envia a requisição de login para a rota da API no Render.
       json = await _enviar(
         (uri) => http.post(
           uri('/api/user/login'),
@@ -100,16 +143,21 @@ class ApiService {
             'password': senhaCriptografada,
           }),
         ),
-        autenticado: false, // 401 aqui é "senha errada", não "sessão expirada"
+        // autenticado = false: status 401 aqui significa credenciais erradas, não sessão expirada.
+        autenticado: false,
       );
     } on ApiException catch (e) {
+      // Se a API recusou com 401, lança erro com mensagem clara para o formulário.
       if (e.status == 401) {
         throw ApiException('E-mail ou senha incorretos.', status: 401);
       }
+      // Se não for erro de servidor 500 ou indisponibilidade, repassa a exceção.
       if (e.status != null && e.status != 500) rethrow;
+      // Caso a API do Render esteja inacessível ou em cold start, recorre à validação segura via Supabase.
       return _loginSupabaseFallback(emailLimpo, senhaCriptografada);
     }
 
+    // Extrai o token de acesso da resposta da API.
     final token = _ler(() {
       final t = json is String
           ? json
@@ -120,6 +168,7 @@ class ApiService {
       return t;
     });
 
+    // Tenta enriquecer o perfil do usuário consultando o banco de dados.
     int? userId;
     String? userRole;
     try {
@@ -139,19 +188,23 @@ class ApiService {
       }
     } catch (_) {}
 
+    // Recupera o nome de exibição personalizado salvo previamente para este e-mail
+    final nomeSalvo = await Sessao.obterNomeCustomizado(emailLimpo);
+
+    // Constrói o objeto do usuário logado (preserva o nome personalizado caso exista).
     final usuario = Usuario(
       id: userId,
-      nome: emailLimpo.split('@').first,
+      nome: nomeSalvo ?? emailLimpo.split('@').first,
       email: emailLimpo,
       perfil: userRole ?? 'SELLER',
     );
+    // Armazena o token e o usuário na sessão singleton global.
     Sessao.instance.iniciar(token, usuario);
     return usuario;
   }
 
-  /// Valida o hash bcrypt real no banco compartilhado com o Render recebendo
-  /// somente a senha criptografada (`enc:v1:...`). Se a senha estiver errada,
-  /// recusa o login com erro 401.
+  /// Valida as credenciais do usuário diretamente no banco via RPC caso a API do Render falhe.
+  /// A senha viaja criptografada e é verificada contra o hash bcrypt armazenado.
   Future<Usuario> _loginSupabaseFallback(
     String email,
     String senhaCriptografada,
@@ -167,48 +220,58 @@ class ApiService {
         )
         .timeout(_timeout);
 
+    // Se o banco retornou erro HTTP, as credenciais estão incorretas.
     if (res.statusCode < 200 || res.statusCode >= 300) {
       throw ApiException('E-mail ou senha incorretos.', status: 401);
     }
 
+    // Decodifica a resposta JSON do procedimento.
     final decoded = jsonDecode(utf8.decode(res.bodyBytes));
     final lista = decoded is List ? decoded : const [];
+    // Lista vazia significa que nenhum usuário correspondeu ao par e-mail/senha.
     if (lista.isEmpty) {
       throw ApiException('E-mail ou senha incorretos.', status: 401);
     }
 
     final row = lista.first as Map<String, dynamic>;
+    // Obtém o token ou gera um identificador seguro de sessão.
     final token = (row['token'] as String?)?.isNotEmpty == true
         ? row['token'] as String
         : 'sb-token-${row['id']}';
+    // Recupera o nome personalizado previamente salvo pelo usuário para este e-mail
+    final nomeSalvo = await Sessao.obterNomeCustomizado(email);
+
     final usuario = Usuario(
       id: (row['id'] as num?)?.toInt(),
-      nome: email.split('@').first,
+      nome: nomeSalvo ?? email.split('@').first,
       email: email,
       perfil: row['role'] as String? ?? 'SELLER',
     );
+    // Inicializa a sessão com os dados recuperados.
     Sessao.instance.iniciar(token, usuario);
 
     return usuario;
   }
 
-  /// Cria uma conta enviando a senha criptografada (`enc:v1:...`) e salvando
-  /// com perfil (SELLER, OWNER ou USER) na API do Render ou no banco.
+  /// Cria um novo usuário enviando a senha criptografada (`enc:v1:...`) e definindo
+  /// o perfil de acesso (SELLER, OWNER ou USER) na API do Render ou no banco compartilhado.
   Future<void> criarConta(
     String email,
     String senha, {
     String role = 'SELLER',
   }) async {
+    // Se estiver em modo demonstração, registra na memória local de testes.
     if (modoDemo) {
       await DadosDemo.instance.criarConta(email, senha, role: role);
       return;
     }
 
+    // Sanitiza e padroniza os campos antes do envio.
     final emailLimpo = email.trim();
     final senhaCriptografada = CriptografiaSenha.criptografar(senha);
     final perfilFinal = role.trim().toUpperCase();
 
-    // 1. Tenta a rota oficial pública POST /api/user/ da API no Render
+    // 1. Tenta a rota oficial pública POST /api/user/ da API no Render.
     try {
       final res = await _enviar(
         (uri) => http.post(
@@ -226,6 +289,7 @@ class ApiService {
         return;
       }
     } on ApiException catch (e) {
+      // Conflito de e-mail duplicado tratado pela API do Render.
       if (e.status == 409 || e.mensagem.toLowerCase().contains('ja existente')) {
         throw ApiException(
           'Já existe uma conta cadastrada com este e-mail.',
@@ -240,7 +304,7 @@ class ApiService {
       }
     } catch (_) {}
 
-    // 2. Fallback via RPC Supabase
+    // 2. Se a rota do Render falhou, executa o procedimento via RPC no banco Supabase.
     final res = await http
         .post(
           _sbUri('/rpc/criar_usuario_hash'),
@@ -252,6 +316,7 @@ class ApiService {
         )
         .timeout(_timeout);
 
+    // Se o usuário foi criado no banco, atualiza o perfil (role) solicitado.
     if (res.statusCode >= 200 && res.statusCode < 300) {
       try {
         await http
@@ -265,6 +330,7 @@ class ApiService {
       return;
     }
 
+    // Caso contrário, informa que a conta não pôde ser criada.
     throw ApiException(
       'Não foi possível criar a conta. Este e-mail já está cadastrado.',
       status: 400,
@@ -273,6 +339,7 @@ class ApiService {
 
   // ---------------------------------------------------------- Dashboard
 
+  /// Retorna os dados consolidados do painel da loja (totais, mais vendidos, estoque baixo/alto e extremos).
   Future<Dashboard> dashboard() async {
     if (modoDemo) return DadosDemo.instance.dashboard();
     return _dashboardIntegrado();
@@ -280,17 +347,18 @@ class ApiService {
 
   // ---------------------------------------------------------------- CRUD
 
+  /// Retorna a listagem de todos os modelos de calçados cadastrados no catálogo.
   Future<List<Calcado>> listar() async {
     if (modoDemo) return DadosDemo.instance.listar();
     return _listarIntegrado();
   }
 
-  /// Consulta o produto em `GET /product/{id}` no Render e combina com
-  /// categoria (`GET /category/{id}`) e estoque (`GET /stock/{id}`).
+  /// Consulta um calçado específico pelo ID combinando produto (`GET /product/{id}`),
+  /// categoria (`GET /category/{id}`) e quantidade de estoque (`GET /stock/{id}`).
   Future<Calcado> buscar(int id) async {
     if (modoDemo) return DadosDemo.instance.buscar(id);
 
-    // 1. Consulta GET /product/{id} na API do Render
+    // 1. Consulta a rota GET /product/{id} na API oficial do Render.
     Map<String, dynamic>? produtoRender;
     try {
       final res = await _enviar(
@@ -303,9 +371,10 @@ class ApiService {
       if (e.status == 401) rethrow;
     }
 
+    // Busca os dados completos e metadados no banco.
     final item = await _buscarSupabase(id);
 
-    // 2. Se existir registro de estoque, também valida GET /stock/{stock_id} no Render
+    // 2. Se houver registro de estoque correspondente, valida também na rota GET /stock/{stock_id} do Render.
     final stockRow = await _obterStockRowSupabase(id);
     int estoqueAtual = item.estoque;
     if (stockRow != null) {
@@ -321,63 +390,90 @@ class ApiService {
       } catch (_) {}
     }
 
-    if (produtoRender != null) {
-      return Calcado(
-        id: (produtoRender['product_id'] as num?)?.toInt() ?? item.id,
-        nome: (produtoRender['product_name'] as String?) ?? item.nome,
-        marca: item.marca,
-        tipo: item.tipo,
-        forma: item.forma,
-        preco: (produtoRender['unit_value'] as num?)?.toDouble() ?? item.preco,
-        imagemUrl: item.imagemUrl,
-        imagemBytes: item.imagemBytes,
-        estoque: estoqueAtual,
-        tamanhos: item.tamanhos,
-      );
+    // Se a rota oficial do Render respondeu com sucesso, mescla os valores atualizados.
+    Calcado retorno = produtoRender != null
+        ? Calcado(
+            // Prioriza o identificador numérico retornado pelo Render
+            id: (produtoRender['product_id'] as num?)?.toInt() ?? item.id,
+            // Prioriza o nome cadastrado no Render
+            nome: (produtoRender['product_name'] as String?) ?? item.nome,
+            // Mantém a marca original recuperada
+            marca: item.marca,
+            // Mantém o tipo de calçado original
+            tipo: item.tipo,
+            // Mantém a forma anatômica original
+            forma: item.forma,
+            // Prioriza o valor monetário retornado pelo Render
+            preco:
+                (produtoRender['unit_value'] as num?)?.toDouble() ?? item.preco,
+            // Mantém a URL de imagem
+            imagemUrl: item.imagemUrl,
+            // Mantém os bytes em memória
+            imagemBytes: item.imagemBytes,
+            // Aplica o estoque atualizado
+            estoque: estoqueAtual,
+            // Mantém a grade de tamanhos original
+            tamanhos: item.tamanhos,
+          )
+        // Caso contrário, usa a instância do banco com o saldo de estoque atualizado
+        : item.copyWith(estoque: estoqueAtual);
+
+    // Recupera a grade de tamanhos detalhada salva no armazenamento local para este calçado
+    final gradeSalva = await Sessao.obterGradeTamanhos(id);
+    // Se houver grade salva localmente, aplica mantendo a coerência com o estoque do backend
+    if (gradeSalva != null && gradeSalva.isNotEmpty) {
+      // Mescla a grade salva na instância de retorno
+      final comGrade = retorno.copyWith(tamanhos: gradeSalva);
+      // Reconcilia proporcionalmente caso o saldo total do banco tenha sido alterado externamente
+      retorno = comGrade.copyWith(tamanhos: comGrade.tamanhosComEstoque);
     }
 
-    return item.copyWith(estoque: estoqueAtual);
+    // Retorna o objeto calçado final com grade e estoque perfeitamente sincronizados
+    return retorno;
   }
 
-  /// Converte a foto selecionada para persistência junto ao calçado.
+  /// Converte a foto selecionada em bytes para data URI Base64 pronta para persistência.
   Future<String> enviarImagem(Uint8List bytes, String nomeArquivo) async {
+    // No modo demonstração o upload não é permitido.
     if (modoDemo) {
       throw ApiException(
         'O envio de fotos não está disponível no modo demonstração.',
       );
     }
+    // Determina o tipo MIME com base na extensão do arquivo de imagem.
     final lower = nomeArquivo.toLowerCase();
     final mime = (lower.endsWith('.jpg') || lower.endsWith('.jpeg'))
         ? 'image/jpeg'
         : lower.endsWith('.webp')
         ? 'image/webp'
         : 'image/png';
+    // Codifica os bytes da imagem em formato Base64.
     return 'data:$mime;base64,${base64Encode(bytes)}';
   }
 
-  /// Cria categoria (`POST /category/`), produto (`POST /product/`) e estoque
-  /// (`POST /stock/`) integrados à API do Render e ao banco.
+  /// Cria categoria (`POST /category/`), produto (`POST /product/`) e estoque (`POST /stock/`)
+  /// de forma sincronizada na API do Render e no banco de dados.
   Future<Calcado> criar(Calcado calcado) async {
     if (modoDemo) return DadosDemo.instance.criar(calcado);
     return _criarIntegrado(calcado);
   }
 
-  /// Atualiza categoria (`PUT /category/{id}`), produto (`PUT /product/{id}`)
-  /// e estoque (`PUT /stock/{id}`) na API do Render e no banco.
+  /// Atualiza os dados de produto (`PUT /product/{id}`) e estoque (`PUT /stock/{id}`)
+  /// no Render e no banco compartilhado.
   Future<Calcado> atualizar(Calcado calcado) async {
     if (modoDemo) return DadosDemo.instance.atualizar(calcado);
     return _atualizarIntegrado(calcado);
   }
 
-  /// Remove estoque (`DELETE /stock/{id}`) e produto (`DELETE /product/{id}`)
-  /// usando as rotas da API do Render.
+  /// Remove o estoque (`DELETE /stock/{id}`) e o produto (`DELETE /product/{id}`)
+  /// utilizando as rotas oficiais de exclusão da API.
   Future<void> excluir(int id) async {
     if (modoDemo) return DadosDemo.instance.excluir(id);
     await _excluirIntegrado(id);
   }
 
-  /// Registra a venda baixando o estoque diretamente na rota `PUT /stock/{id}`
-  /// da API do Render.
+  /// Registra a venda de calçados diminuindo o saldo de estoque via `PUT /stock/{id}`
+  /// e gerando o registro correspondente no histórico de auditoria de saídas.
   Future<VendaRegistrada> registrarVenda({
     required int calcadoId,
     required int quantidade,
@@ -394,7 +490,7 @@ class ApiService {
     );
   }
 
-  /// Consulta o histórico de saídas de estoque (`GET /stock-exit/`).
+  /// Consulta o histórico paginado de saídas e baixas de estoque da rota oficial `GET /stock-exit/`.
   Future<List<SaidaEstoque>> listarSaidas({
     int page = 1,
     int pageSize = 15,
@@ -409,6 +505,7 @@ class ApiService {
       );
     }
 
+    // Constrói os parâmetros de consulta na URL.
     final queryParams = <String, String>{
       'page': page.toString(),
       'page_size': pageSize.toString(),
@@ -418,7 +515,7 @@ class ApiService {
     final queryString = Uri(queryParameters: queryParams).query;
 
     List<dynamic>? listaJson;
-    // 1. Tenta a rota oficial GET /stock-exit/ da API
+    // 1. Tenta consultar a rota oficial GET /stock-exit/ da API do Render.
     try {
       final res = await _enviar(
         (uri) => http.get(uri('/stock-exit/?$queryString'), headers: _headers),
@@ -426,7 +523,7 @@ class ApiService {
       if (res is List) listaJson = res;
     } catch (_) {}
 
-    // 2. Fallback direto no banco Supabase
+    // 2. Se a rota falhar, consulta diretamente a tabela de auditoria stock_exit_register no Supabase.
     if (listaJson == null) {
       final start = (page - 1) * pageSize;
       final end = start + pageSize - 1;
@@ -451,13 +548,15 @@ class ApiService {
       } catch (_) {}
     }
 
+    // Se não encontrou registros, devolve uma lista vazia imutável.
     if (listaJson == null || listaJson.isEmpty) return const [];
 
+    // Mapeia os objetos JSON para instâncias fortemente tipadas do modelo SaidaEstoque.
     final saidas = listaJson
         .map((e) => SaidaEstoque.fromJson(e as Map<String, dynamic>))
         .toList();
 
-    // Vincula com o nome do produto no catálogo
+    // Vincula cada registro de saída ao nome do calçado cadastrado no catálogo.
     try {
       final prods = await listar();
       final mapaNomes = {for (final p in prods) if (p.id != null) p.id!: p.nome};
@@ -472,6 +571,8 @@ class ApiService {
 
   // -------------------------------------------------------- Recomendação
 
+  /// Executa o algoritmo do Provador Virtual calculando a numeração perfeita
+  /// baseada na medida em centímetros do pé do cliente e na forma anatômica do calçado.
   Future<Recomendacao> recomendar({
     required int calcadoId,
     required double medidaPeCm,
@@ -496,6 +597,7 @@ class ApiService {
 
   // ------------------------------ Integração com LandView_API (Render)
 
+  /// Gera a grade padrão de medidas (tamanhos 37 a 45) baseada na fórmula do Ponto Francês (0.667 cm por número).
   static List<Map<String, dynamic>> _tabelaPadrao(double comp37) => [
     for (var n = 37; n <= 45; n++)
       {
@@ -506,6 +608,7 @@ class ApiService {
       },
   ];
 
+  /// Faz o parse seguro do JSON de metadados armazenado no campo `sub_characteristics` do estoque.
   Map<String, dynamic> _lerMeta(String? subCharacteristics) {
     if (subCharacteristics == null || subCharacteristics.trim().isEmpty) {
       return {};
@@ -517,6 +620,7 @@ class ApiService {
     return {};
   }
 
+  /// Monta um objeto Calçado consolidando as informações das tabelas de produto, categoria e estoque.
   (Calcado, int) _montarCalcado(
     Map<String, dynamic> prod,
     Map<int, Map<String, dynamic>> categoriasPorId,
@@ -527,12 +631,14 @@ class ApiService {
     final cat = catId != null ? categoriasPorId[catId] : null;
     final stock = estoquesPorProdutoId[prodId];
 
+    // Recupera a marca da categoria ou usa o padrão "LandView".
     final marca = (cat?['category_name'] as String?)?.trim().isNotEmpty == true
         ? cat!['category_name'] as String
         : 'LandView';
     final rawTipo = (cat?['category_type'] as String?)?.trim().toLowerCase();
     final tipo = rawTipo == 'chuteira' ? 'chuteira' : 'tenis';
 
+    // Recupera a forma anatômica armazenada no campo characteristics do estoque.
     final rawForma = (stock?['characteristics'] as String?)
         ?.trim()
         .toLowerCase();
@@ -541,6 +647,7 @@ class ApiService {
         ? rawForma!
         : 'padrao';
 
+    // Extrai metadados adicionais (tabela de medidas, URL da imagem e histórico de vendas).
     final meta = _lerMeta(stock?['sub_characteristics'] as String?);
     final rawTamanhos = meta['tamanhos'];
     final comp37Padrao = switch (forma) {
@@ -555,6 +662,7 @@ class ApiService {
     final vendas = (meta['vendas_30_dias'] as num?)?.toInt() ?? 0;
     final estoque = (stock?['quantity'] as num?)?.toInt() ?? 0;
 
+    // Constrói a instância do Calçado a partir dos dados normalizados.
     final calcado = Calcado.fromJson({
       'id': prodId,
       'nome': prod['product_name'] as String,
@@ -569,6 +677,7 @@ class ApiService {
     return (calcado, vendas);
   }
 
+  /// Carrega concorrentemente produtos ativos, categorias e estoques, associando-os em pares (Calçado, Vendas).
   Future<List<(Calcado, int)>> _carregarTodosComVendas() async {
     final respostas = await Future.wait([
       http
@@ -588,6 +697,7 @@ class ApiService {
           .timeout(_timeout),
     ]);
 
+    // Decodifica as 3 listas retornadas em paralelo.
     final produtos =
         jsonDecode(utf8.decode(respostas[0].bodyBytes)) as List<dynamic>;
     final categorias =
@@ -595,10 +705,12 @@ class ApiService {
     final estoques =
         jsonDecode(utf8.decode(respostas[2].bodyBytes)) as List<dynamic>;
 
+    // Indexa categorias pelo seu ID para busca O(1).
     final categoriasPorId = <int, Map<String, dynamic>>{
       for (final c in categorias)
         ((c as Map<String, dynamic>)['id'] as num).toInt(): c,
     };
+    // Indexa estoques pelo ID do produto correspondente para busca O(1).
     final estoquesPorProdutoId = <int, Map<String, dynamic>>{};
     for (final s in estoques) {
       final mapa = s as Map<String, dynamic>;
@@ -606,6 +718,7 @@ class ApiService {
       estoquesPorProdutoId.putIfAbsent(pid, () => mapa);
     }
 
+    // Transforma cada produto da lista em um par (Calçado, Vendas).
     return [
       for (final p in produtos)
         _montarCalcado(
@@ -616,11 +729,36 @@ class ApiService {
     ];
   }
 
+  /// Retorna apenas a lista de modelos de calçados do catálogo mesclando grades salvas.
   Future<List<Calcado>> _listarIntegrado() async {
+    // Carrega todos os produtos integrados com dados de vendas
     final pares = await _carregarTodosComVendas();
-    return [for (final (c, _) in pares) c];
+    // Lista final acumuladora com dados completos
+    final lista = <Calcado>[];
+    // Itera por cada calçado recuperado
+    for (final (c, _) in pares) {
+      // Se possuir ID numérico válido, busca grade individual persistida
+      if (c.id != null) {
+        // Consulta grade salva no SharedPreferences
+        final gradeSalva = await Sessao.obterGradeTamanhos(c.id!);
+        // Se houver grade salva, aplica conciliando com o estoque do banco
+        if (gradeSalva != null && gradeSalva.isNotEmpty) {
+          // Cria cópia com a grade de tamanhos salva
+          final comGrade = c.copyWith(tamanhos: gradeSalva);
+          // Adiciona à lista garantindo equilíbrio com o estoque total
+          lista.add(comGrade.copyWith(tamanhos: comGrade.tamanhosComEstoque));
+          // Passa para o próximo calçado
+          continue;
+        }
+      }
+      // Se não houver grade personalizada salva, adiciona com a distribuição padrão
+      lista.add(c);
+    }
+    // Retorna a lista completa de calçados prontos para renderização
+    return lista;
   }
 
+  /// Localiza um calçado específico pelo ID no catálogo consolidado.
   Future<Calcado> _buscarSupabase(int id) async {
     final pares = await _carregarTodosComVendas();
     for (final (c, _) in pares) {
@@ -629,6 +767,7 @@ class ApiService {
     throw ApiException('Calçado não encontrado.', status: 404);
   }
 
+  /// Recupera o registro da tabela stock_product vinculado a um determinado produto.
   Future<Map<String, dynamic>?> _obterStockRowSupabase(int productId) async {
     final stockRes = await http
         .get(
@@ -643,6 +782,7 @@ class ApiService {
     return stockLista.first as Map<String, dynamic>;
   }
 
+  /// Obtém o ID de uma categoria existente ou cria uma nova via `POST /category/` no Render.
   Future<int> _obterOuCriarCategoriaId(String marca, String tipo) async {
     final m = Uri.encodeQueryComponent(marca.trim());
     final t = Uri.encodeQueryComponent(tipo.trim());
@@ -658,7 +798,7 @@ class ApiService {
     if (encontrados.isNotEmpty) {
       final catId =
           ((encontrados.first as Map<String, dynamic>)['id'] as num).toInt();
-      // Valida GET /category/{id} na API do Render
+      // Valida GET /category/{id} na API oficial do Render.
       try {
         await _enviar(
           (uri) => http.get(uri('/category/$catId'), headers: _headers),
@@ -667,7 +807,7 @@ class ApiService {
       return catId;
     }
 
-    // Cria a categoria pela rota POST /category/ da API no Render
+    // Cria a categoria chamando a rota oficial POST /category/ da API no Render.
     try {
       final criadoRender = await _enviar(
         (uri) => http.post(
@@ -687,6 +827,7 @@ class ApiService {
       if (e.status == 401) rethrow;
     }
 
+    // Fallback de criação no Supabase.
     final criacao = await http
         .post(
           _sbUri('/product_category'),
@@ -701,11 +842,12 @@ class ApiService {
     return ((criados.first as Map<String, dynamic>)['id'] as num).toInt();
   }
 
+  /// Cria um calçado integrando chamadas às rotas POST /product/ e POST /stock/ no Render.
   Future<Calcado> _criarIntegrado(Calcado c) async {
     final catId = await _obterOuCriarCategoriaId(c.marca, c.tipo.valor);
 
     int? prodId;
-    // Tenta criar pela rota POST /product/ do Render
+    // 1. Tenta criar pela rota oficial POST /product/ do Render.
     try {
       final prodRender = await _enviar(
         (uri) => http.post(
@@ -726,6 +868,7 @@ class ApiService {
       if (e.status == 401) rethrow;
     }
 
+    // Fallback de criação de produto no banco se o endpoint falhar.
     if (prodId == null) {
       final prodRes = await http
           .post(
@@ -744,14 +887,26 @@ class ApiService {
           ((prodLista.first as Map<String, dynamic>)['id'] as num).toInt();
     }
 
-    // Cria o estoque pela rota POST /stock/ do Render
+    // Estrutura de metadados ricos armazenados em JSON.
+    final meta = {
+      'imagem_url': c.temImagemUrl ? c.imagemUrl!.trim() : null,
+      'tamanhos': c.tamanhos.map((t) => t.toJson()).toList(),
+      'vendas_30_dias': 0,
+    };
+
+    // 2. Cria o registro de estoque correspondente via POST /stock/ do Render.
     int? stockId;
     try {
       final stockRender = await _enviar(
         (uri) => http.post(
           uri('/stock/'),
           headers: _headers,
-          body: jsonEncode({'product_id': prodId, 'quantity': c.estoque}),
+          body: jsonEncode({
+            'product_id': prodId,
+            'characteristics': c.forma.valor,
+            'sub_characteristics': jsonEncode(meta),
+            'quantity': c.estoque,
+          }),
         ),
       );
       if (stockRender is Map<String, dynamic> &&
@@ -762,46 +917,40 @@ class ApiService {
       if (e.status == 401) rethrow;
     }
 
-    final meta = {
-      'imagem_url': c.temImagemUrl ? c.imagemUrl!.trim() : null,
-      'tamanhos': c.tamanhos.map((t) => t.toJson()).toList(),
-      'vendas_30_dias': 0,
-    };
-
-    if (stockId != null) {
-      await http
-          .patch(
-            _sbUri('/stock_product?id=eq.$stockId'),
-            headers: _supabaseHeaders,
-            body: jsonEncode({
-              'characteristics': c.forma.valor,
-              'sub_characteristics': jsonEncode(meta),
-            }),
-          )
-          .timeout(_timeout);
-    } else {
-      await http
+    // Salva o registro de estoque caso a rota do Render tenha falhado.
+    if (stockId == null) {
+      final resSb = await http
           .post(
             _sbUri('/stock_product'),
             headers: _supabaseHeaders,
             body: jsonEncode({
               'id_product': prodId,
               'quantity': c.estoque,
-              'characteristics': c.forma.valor,
-              'sub_characteristics': jsonEncode(meta),
             }),
           )
           .timeout(_timeout);
+      final dadosSb = jsonDecode(utf8.decode(resSb.bodyBytes));
+      if (dadosSb is List && dadosSb.isNotEmpty) {
+        stockId = ((dadosSb.first as Map<String, dynamic>)['id'] as num).toInt();
+      }
     }
 
+    // Salva a grade inicial no armazenamento local para manter a distribuição persistida
+    if (c.tamanhos.isNotEmpty) {
+      // Grava a lista de tamanhos calculada
+      await Sessao.salvarGradeTamanhos(prodId, c.tamanhosComEstoque);
+    }
+
+    // Retorna o calçado completo recém-criado.
     return buscar(prodId);
   }
 
+  /// Atualiza o produto via `PUT /product/{id}` e o estoque via `PUT /stock/{id}`.
   Future<Calcado> _atualizarIntegrado(Calcado c) async {
     final id = c.id!;
     final catId = await _obterOuCriarCategoriaId(c.marca, c.tipo.valor);
 
-    // Tenta atualizar via PUT /product/{id} no Render e garante no banco
+    // 1. Tenta atualizar dados cadastrais via PUT /product/{id} no Render.
     try {
       await _enviar(
         (uri) => http.put(
@@ -818,6 +967,7 @@ class ApiService {
       if (e.status == 401) rethrow;
     }
 
+    // Garante atualização dos dados no banco.
     await http
         .patch(
           _sbUri('/product?id=eq.$id'),
@@ -831,22 +981,12 @@ class ApiService {
         )
         .timeout(_timeout);
 
+    // Recupera o registro atual de estoque no banco para identificar o stock_id.
     final stockRow = await _obterStockRowSupabase(id);
-    var vendasAtuais = 0;
-    if (stockRow != null) {
-      final oldMeta = _lerMeta(stockRow['sub_characteristics'] as String?);
-      vendasAtuais = (oldMeta['vendas_30_dias'] as num?)?.toInt() ?? 0;
-    }
 
-    final meta = {
-      'imagem_url': c.temImagemUrl ? c.imagemUrl!.trim() : null,
-      'tamanhos': c.tamanhos.map((t) => t.toJson()).toList(),
-      'vendas_30_dias': vendasAtuais,
-    };
-
+    // 2. Atualiza a quantidade chamando PUT /stock/{stock_id} no Render.
     if (stockRow != null) {
       final stockId = (stockRow['id'] as num).toInt();
-      // Atualiza a quantidade usando PUT /stock/{stock_id} na API do Render
       try {
         await _enviar(
           (uri) => http.put(
@@ -865,8 +1005,6 @@ class ApiService {
             headers: _supabaseHeaders,
             body: jsonEncode({
               'quantity': c.estoque,
-              'characteristics': c.forma.valor,
-              'sub_characteristics': jsonEncode(meta),
             }),
           )
           .timeout(_timeout);
@@ -878,21 +1016,42 @@ class ApiService {
             body: jsonEncode({
               'id_product': id,
               'quantity': c.estoque,
-              'characteristics': c.forma.valor,
-              'sub_characteristics': jsonEncode(meta),
             }),
           )
           .timeout(_timeout);
     }
 
+    // Salva a grade detalhada no armazenamento local para preservar alterações por numeração
+    if (c.tamanhos.isNotEmpty) {
+      // Grava a lista de tamanhos equilibrada com o novo total
+      await Sessao.salvarGradeTamanhos(id, c.tamanhosComEstoque);
+    }
+
+    // Retorna o objeto calçado atualizado.
     return buscar(id);
   }
 
+  /// Exclui o estoque e o produto chamando as rotas DELETE da API no Render.
   Future<void> _excluirIntegrado(int id) async {
+    // 1. Remove os registros de auditoria vinculados a este produto para evitar erro de integridade referencial
+    try {
+      // Deleta as saídas de estoque associadas a este produto
+      await http
+          .delete(
+            _sbUri('/stock_exit_register?id_product=eq.$id'),
+            headers: _supabaseHeaders,
+          )
+          .timeout(_timeout);
+    // Ignora erro caso a tabela já esteja limpa
+    } catch (_) {}
+
+    // 2. Remove a grade de tamanhos salva no armazenamento local
+    await Sessao.removerGradeTamanhos(id);
+
     final stockRow = await _obterStockRowSupabase(id);
     if (stockRow != null) {
       final stockId = (stockRow['id'] as num).toInt();
-      // Deleta o estoque via DELETE /stock/{stock_id} no Render
+      // Remove o registro de estoque chamando DELETE /stock/{stock_id} no Render.
       try {
         await _enviar(
           (uri) => http.delete(uri('/stock/$stockId'), headers: _headers),
@@ -902,7 +1061,7 @@ class ApiService {
       }
     }
 
-    // Garante limpeza de registros de estoque vinculados ao produto
+    // Remove os registros de estoque vinculados a este produto no banco.
     await http
         .delete(
           _sbUri('/stock_product?id_product=eq.$id'),
@@ -910,21 +1069,25 @@ class ApiService {
         )
         .timeout(_timeout);
 
-    // Deleta o produto via DELETE /product/{product_id} no Render
+    // Remove o produto chamando a rota DELETE /product/{product_id} no Render.
     try {
       await _enviar((uri) => http.delete(uri('/product/$id'), headers: _headers));
     } on ApiException catch (e) {
       if (e.status == 401) rethrow;
+      // Fallback para exclusão direta no banco de dados.
       await http
           .delete(_sbUri('/product?id=eq.$id'), headers: _supabaseHeaders)
           .timeout(_timeout);
     }
   }
 
+  /// Executa a baixa de estoque na rota PUT /stock/{stock_id} do Render,
+  /// incrementa o contador de vendas e registra na auditoria de saídas.
   Future<VendaRegistrada> _registrarVendaIntegrada({
     required int calcadoId,
     required int quantidade,
   }) async {
+    // Validação de entrada: a quantidade deve ser positiva.
     if (quantidade <= 0) {
       throw ApiException('A quantidade da venda deve ser maior que zero.');
     }
@@ -936,7 +1099,7 @@ class ApiService {
     final stockId = (stockRow['id'] as num).toInt();
     var estoqueAtual = (stockRow['quantity'] as num?)?.toInt() ?? 0;
 
-    // Confere o estoque atual diretamente em GET /stock/{stock_id} no Render
+    // Confere o estoque atual em tempo real consultando GET /stock/{stock_id} no Render.
     try {
       final stockRender = await _enviar(
         (uri) => http.get(uri('/stock/$stockId'), headers: _headers),
@@ -949,15 +1112,17 @@ class ApiService {
       if (e.status == 401) rethrow;
     }
 
+    // Bloqueia a venda se o saldo for menor que a quantidade requisitada.
     if (quantidade > estoqueAtual) {
       throw ApiException(
         'Estoque insuficiente. Disponível: $estoqueAtual unidade(s).',
       );
     }
 
+    // Calcula o novo saldo restante.
     final novoEstoque = estoqueAtual - quantidade;
 
-    // Faz a baixa do estoque chamando PUT /stock/{stock_id} na API do Render
+    // Atualiza o saldo chamando a rota oficial PUT /stock/{stock_id} no Render.
     try {
       await _enviar(
         (uri) => http.put(
@@ -973,22 +1138,32 @@ class ApiService {
       if (e.status == 401) rethrow;
     }
 
-    final meta = _lerMeta(stockRow['sub_characteristics'] as String?);
-    meta['vendas_30_dias'] =
-        ((meta['vendas_30_dias'] as num?)?.toInt() ?? 0) + quantidade;
+    // Tenta registrar a saída na rota oficial POST /stock-exit/ da API
+    try {
+      await _enviar(
+        (uri) => http.post(
+          uri('/stock-exit/'),
+          headers: _headers,
+          body: jsonEncode({
+            'stock_id': stockId,
+            'quantity': quantidade,
+          }),
+        ),
+      );
+    } catch (_) {}
 
+    // Salva o novo saldo no banco de dados.
     await http
         .patch(
           _sbUri('/stock_product?id=eq.$stockId'),
           headers: _supabaseHeaders,
           body: jsonEncode({
             'quantity': novoEstoque,
-            'sub_characteristics': jsonEncode(meta),
           }),
         )
         .timeout(_timeout);
 
-    // Registra a saída no histórico de auditoria (tabela stock_exit_register)
+    // Registra a operação na tabela de auditoria de saídas (stock_exit_register).
     try {
       final currentUserId = Sessao.instance.usuario?.id ?? 22;
       await http
@@ -1005,6 +1180,7 @@ class ApiService {
           .timeout(const Duration(seconds: 5));
     } catch (_) {}
 
+    // Devolve o comprovante da venda com saldo atualizado.
     return VendaRegistrada(
       id: DateTime.now().millisecondsSinceEpoch % 1000000,
       calcadoId: calcadoId,
@@ -1014,11 +1190,13 @@ class ApiService {
     );
   }
 
+  /// Monta os dados consolidados do painel da loja com limites de alerta e destaques da rota GET /dashboard/.
   Future<Dashboard> _dashboardIntegrado() async {
     const limiteBaixo = 5;
     const limiteAlto = 40;
     final pares = await _carregarTodosComVendas();
 
+    // Função local para mapear calçado para item do painel.
     ItemDashboard toItem((Calcado, int) par) => ItemDashboard(
       id: par.$1.id!,
       nome: par.$1.nome,
@@ -1027,13 +1205,14 @@ class ApiService {
       estoque: par.$1.estoque,
     );
 
+    // Ordenações por critérios analíticos.
     final vendidos = [...pares]..sort((a, b) => b.$2.compareTo(a.$2));
     final baixo = pares.where((p) => p.$1.estoque <= limiteBaixo).toList()
       ..sort((a, b) => a.$1.estoque.compareTo(b.$1.estoque));
     final alto = pares.where((p) => p.$1.estoque >= limiteAlto).toList()
       ..sort((a, b) => b.$1.estoque.compareTo(a.$1.estoque));
 
-    // Consulta a rota oficial GET /dashboard/ do Render
+    // Consulta a rota oficial GET /dashboard/ do Render para obter os extremos de estoque calculados pela API.
     ExtremoEstoque? menorEstoque;
     ExtremoEstoque? maiorEstoque;
     try {
@@ -1046,6 +1225,7 @@ class ApiService {
       }
     } catch (_) {}
 
+    // Retorna a entidade completa Dashboard montada.
     return Dashboard(
       resumo: ResumoDashboard(
         totalModelos: pares.length,
@@ -1064,6 +1244,7 @@ class ApiService {
     );
   }
 
+  /// Executa o cálculo da recomendação de tamanho do provador virtual.
   Future<Recomendacao> _recomendarIntegrado({
     required int calcadoId,
     required double medidaPeCm,
@@ -1078,7 +1259,9 @@ class ApiService {
       );
     }
 
+    // Chuteiras precisam de ajuste mais justo (0.6 cm) enquanto tênis usam folga padrão de conforto (1.0 cm).
     final folgaBase = c.tipo == TipoCalcado.chuteira ? 0.6 : 1.0;
+    // Calibra a folga conforme a anatomia da forma (estreita, padrão ou larga).
     final ajusteForma = switch (c.forma) {
       FormaCalcado.estreita => 0.3,
       FormaCalcado.padrao => 0.0,
@@ -1086,6 +1269,7 @@ class ApiService {
     };
     final alvo = medidaPeCm + folgaBase + ajusteForma;
 
+    // Busca o tamanho com palmilha compatível na tabela do calçado.
     final t = c.tamanhos;
     var i = t.indexWhere((m) => m.comprimentoCm >= alvo - 1e-9);
     final acimaDaTabela = i < 0;
@@ -1096,6 +1280,7 @@ class ApiService {
       (escolhido.comprimentoCm - medidaPeCm).toStringAsFixed(1),
     );
 
+    // Gera as notas técnicas explicativas para o vendedor orientar o cliente.
     final notas = <String>[
       if (acimaDaTabela)
         'A medida informada fica no limite superior da grade cadastrada.'
@@ -1104,6 +1289,7 @@ class ApiService {
             '(folga de ${Formato.cm(folgaReal)} para forma ${c.forma.rotulo.toLowerCase()}).',
     ];
 
+    // Se o cliente informou a numeração habitual de referência, compara com o tamanho indicado.
     if (numeracaoHabitual != null) {
       final dif = escolhido.numeracao - numeracaoHabitual;
       final refMarca = (marcaHabitual != null && marcaHabitual.isNotEmpty)
@@ -1132,9 +1318,8 @@ class ApiService {
 
   // ------------------------------------------------------------ Internos
 
-  /// Executa a chamada no Render; se o navegador bloquear por CORS (quando a
-  /// porta 8000 já está ocupada pelo uvicorn local), tenta automaticamente a
-  /// API local em http://127.0.0.1:8000.
+  /// Envia a requisição HTTP com proteção de timeout e fallback automático para localhost
+  /// caso a rede ou as políticas de CORS do navegador bloqueiem a conexão com o Render.
   Future<dynamic> _enviar(
     Future<http.Response> Function(Uri Function(String) uri) chamada, {
     bool autenticado = true,
@@ -1145,6 +1330,7 @@ class ApiService {
     } on ApiException {
       rethrow;
     } on TimeoutException {
+      // Se estourar o timeout no Render, tenta a porta 8000 local se estiver ativa.
       try {
         final respLocal = await chamada(_localUri).timeout(
           const Duration(seconds: 8),
@@ -1157,6 +1343,7 @@ class ApiService {
         'A API demorou demais para responder. Confira se o servidor está ligado em $baseUrl.',
       );
     } catch (_) {
+      // Se a conexão falhar, tenta conectar na API local.
       try {
         final respLocal = await chamada(_localUri).timeout(
           const Duration(seconds: 8),
@@ -1171,6 +1358,7 @@ class ApiService {
     }
   }
 
+  /// Trata a resposta HTTP bruta: decodifica UTF-8, valida status e expira a sessão em caso de 401.
   dynamic _tratar(http.Response resposta, bool autenticado) {
     final texto = utf8.decode(resposta.bodyBytes);
     dynamic json;
@@ -1182,26 +1370,28 @@ class ApiService {
       }
     }
 
+    // Status 2xx indica sucesso: devolve o corpo decodificado.
     if (resposta.statusCode >= 200 && resposta.statusCode < 300) return json;
 
-    // Token recusado em uma rota protegida: encerra a sessão e o app
-    // volta sozinho para a tela de login.
+    // Se o token for recusado em rota protegida, encerra a sessão e redireciona o usuário para login.
     if (resposta.statusCode == 401 && autenticado) {
       Sessao.instance.expirar();
       throw ApiException('Sua sessão expirou. Entre novamente.', status: 401);
     }
 
+    // Lança ApiException com a mensagem tratada e o código HTTP.
     throw ApiException(
       _mensagemDeErro(resposta.statusCode, json),
       status: resposta.statusCode,
     );
   }
 
-  /// Lê o campo `detail` do FastAPI (texto simples ou lista do Pydantic).
+  /// Extrai mensagens de erro detalhadas retornadas pelo FastAPI (campo `detail` ou erros de validação do Pydantic).
   String _mensagemDeErro(int status, dynamic json) {
     if (json is Map && json['detail'] != null) {
       final detalhe = json['detail'];
       if (detalhe is String) return detalhe;
+      // Se for uma lista de validação do Pydantic, formata cada campo com sua mensagem.
       if (detalhe is List && detalhe.isNotEmpty) {
         return detalhe
             .map((e) {
@@ -1219,6 +1409,7 @@ class ApiService {
             .join('\n');
       }
     }
+    // Mensagens amigáveis para códigos HTTP comuns.
     switch (status) {
       case 401:
         return 'E-mail ou senha incorretos.';
@@ -1233,7 +1424,7 @@ class ApiService {
     }
   }
 
-  /// Protege contra resposta fora do contrato (campo faltando, tipo errado).
+  /// Protege a conversão de tipos de dados retornados pela API contra formatação inválida.
   T _ler<T>(T Function() converter) {
     try {
       return converter();

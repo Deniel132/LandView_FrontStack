@@ -3,9 +3,13 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:parte2_flutter/screens/detalhe_page.dart';
 import 'package:parte2_flutter/services/api_service.dart';
 import 'package:parte2_flutter/services/dados_demo.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
-  setUp(() => ApiService.modoDemoOverride = true);
+  setUp(() {
+    SharedPreferences.setMockInitialValues({});
+    ApiService.modoDemoOverride = true;
+  });
   tearDown(() => ApiService.modoDemoOverride = null);
 
   testWidgets('registra quantidade escolhida e atualiza estoque no detalhe', (
@@ -16,7 +20,9 @@ void main() {
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
 
-    final calcado = (await tester.runAsync(DadosDemo.instance.listar))!.first;
+    // Obtém o primeiro modelo da lista que possui pelo menos 2 unidades disponíveis no primeiro tamanho da grade
+    final calcado = (await tester.runAsync(DadosDemo.instance.listar))!
+        .firstWhere((c) => (c.tamanhosComEstoque.first.estoque ?? 0) >= 2);
     final estoqueAntes = calcado.estoque;
     final id = calcado.id!;
 

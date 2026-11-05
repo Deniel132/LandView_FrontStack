@@ -1,17 +1,28 @@
+// Importa os componentes gráficos do Flutter
 import 'package:flutter/material.dart';
+// Importa o aplicativo principal para alternar tema
 import '../main.dart';
+// Importa o modelo de calçado
 import '../models/calcado.dart';
+// Importa o serviço de conexão com a API
 import '../services/api_service.dart';
+// Importa o tema e as cores
 import '../theme/app_theme.dart';
+// Importa o cartão individual de calçado
 import '../widgets/cartao_calcado.dart';
+// Importa o botão de perfil de usuário da AppBar
 import '../widgets/logo_loja.dart';
+// Importa a tela de cadastro para adicionar novos modelos
 import 'cadastro_page.dart';
+// Importa a tela de detalhes do calçado
 import 'detalhe_page.dart';
 
+/// Enum local para mapear o status visual de conexão com a API
 enum _StatusApi { conectando, online, offline }
 
-/// Tela inicial: carrega, pesquisa e filtra os modelos do catálogo.
+/// Tela de listagem de catálogo com pesquisa e filtros por tipo (Tênis e Chuteiras).
 class HomePage extends StatefulWidget {
+  // Construtor constante da página
   const HomePage({super.key});
 
   @override
@@ -19,32 +30,44 @@ class HomePage extends StatefulWidget {
 }
 
 class _HomePageState extends State<HomePage> {
+  // Lista com todos os calçados retornados pela API
   List<Calcado> _calcados = [];
+
+  // Flag indicadora de requisição de listagem em andamento
   bool _carregando = true;
+
+  // Mensagem de erro caso a API esteja inacessível
   String? _erro;
 
+  // Filtro de categoria esportiva selecionado (Tênis, Chuteira ou Todos)
   TipoCalcado? _filtroTipo;
+
+  // Texto digitado na barra de pesquisa
   String _busca = '';
+
+  // Controlador de texto do campo de busca
   final _buscaController = TextEditingController();
 
   @override
   void initState() {
     super.initState();
+    // Dispara a busca inicial dos dados na API ao inicializar a tela
     _carregar();
   }
 
   @override
   void dispose() {
+    // Descarta o controlador de busca da memória
     _buscaController.dispose();
     super.dispose();
   }
 
-  /// Busca a lista na API. A API é a fonte da verdade: o app não guarda
-  /// nada localmente, então alterações feitas pela interface Python
-  /// aparecem aqui assim que a lista é recarregada.
+  /// Busca a lista atualizada de calçados diretamente na API
   Future<void> _carregar({bool silencioso = false}) async {
+    // Se não for silencioso, exibe o spinner de carregamento
     if (!silencioso) setState(() => _carregando = true);
     try {
+      // Dispara a requisição de listagem de calçados
       final lista = await ApiService.instance.listar();
       if (!mounted) return;
       setState(() {
@@ -61,38 +84,43 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
+  /// Retorna o status atual de conectividade com a API
   _StatusApi get _status {
     if (_carregando) return _StatusApi.conectando;
     return _erro == null ? _StatusApi.online : _StatusApi.offline;
   }
 
-  /// Busca e filtros só fazem sentido quando existe lista para filtrar.
+  /// Indica se existem dados válidos carregados
   bool get _temDados => !_carregando && _erro == null && _calcados.isNotEmpty;
 
+  /// Retorna a lista de calçados filtrada pelo termo de busca e pelo tipo esportivo
   List<Calcado> get _visiveis {
     final termo = _busca.trim().toLowerCase();
     return _calcados.where((c) {
+      // Filtra por categoria esportiva caso esteja selecionada
       if (_filtroTipo != null && c.tipo != _filtroTipo) return false;
+      // Filtra por nome do modelo ou nome da marca
       return termo.isEmpty ||
           c.nome.toLowerCase().contains(termo) ||
           c.marca.toLowerCase().contains(termo);
     }).toList();
   }
 
+  /// Exibe um aviso temporário (SnackBar) na parte inferior da tela
   void _avisar(String mensagem) {
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
       ..showSnackBar(SnackBar(content: Text(mensagem), duration: const Duration(seconds: 2)));
   }
 
-  /// Depois de qualquer tela filha, recarrega a lista: outra pessoa pode
-  /// ter alterado os dados enquanto o vendedor estava na tela de detalhe.
+  /// Ação executada após retornar de uma tela filha (recarrega os dados silenciosamente)
   Future<void> _aposVoltar(String? mensagem) async {
     if (!mounted) return;
     if (mensagem != null) _avisar(mensagem);
     await _carregar(silencioso: true);
   }
 
+  /// Abre a tela de detalhes do calçado
   Future<void> _abrirDetalhe(Calcado calcado) async {
     final resultado = await Navigator.of(context).push<String>(
       MaterialPageRoute(builder: (_) => DetalhePage(calcado: calcado)),
@@ -100,6 +128,7 @@ class _HomePageState extends State<HomePage> {
     await _aposVoltar(resultado);
   }
 
+  /// Abre a tela de cadastro de novos modelos
   Future<void> _abrirCadastro() async {
     final resultado = await Navigator.of(context).push<String>(
       MaterialPageRoute(builder: (_) => const CadastroPage()),
@@ -117,6 +146,7 @@ class _HomePageState extends State<HomePage> {
         titleSpacing: 20,
         title: Row(
           children: [
+            // Ícone quadrado da régua
             Container(
               width: 40,
               height: 40,
@@ -127,6 +157,7 @@ class _HomePageState extends State<HomePage> {
               child: const Icon(Icons.straighten_rounded, color: Colors.white, size: 22),
             ),
             const SizedBox(width: 12),
+            // Título e subtítulo da AppBar
             Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
@@ -149,11 +180,13 @@ class _HomePageState extends State<HomePage> {
           ],
         ),
         actions: [
+          // Botão para recarregar a lista manualmente
           IconButton(
             icon: const Icon(Icons.refresh_rounded, size: 22),
             tooltip: 'Atualizar lista',
             onPressed: _carregando ? null : () => _carregar(),
           ),
+          // Botão para alternar o tema claro/escuro
           IconButton(
             icon: Icon(isDark ? Icons.light_mode_outlined : Icons.dark_mode_outlined, size: 21),
             tooltip: isDark ? 'Usar tema claro' : 'Usar tema escuro',
@@ -161,6 +194,7 @@ class _HomePageState extends State<HomePage> {
               MyApp.themeNotifier.value = isDark ? ThemeMode.light : ThemeMode.dark;
             },
           ),
+          // Botão de perfil de usuário
           const MarcaAppBar(),
         ],
         bottom: PreferredSize(
@@ -174,6 +208,7 @@ class _HomePageState extends State<HomePage> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
+              // Painel superior com contagem de modelos e status da conexão
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
                 child: _PainelCatalogo(
@@ -183,46 +218,50 @@ class _HomePageState extends State<HomePage> {
                   status: _status,
                 ),
               ),
+              // Campo de busca e filtros de categoria (só exibe se houver dados)
               if (_temDados) ...[
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 12, 16, 10),
-                child: TextField(
-                  controller: _buscaController,
-                  onChanged: (v) => setState(() => _busca = v),
-                  decoration: InputDecoration(
-                    hintText: 'Buscar por modelo ou marca',
-                    prefixIcon: const Icon(Icons.search_rounded),
-                    suffixIcon: _busca.isEmpty
-                        ? null
-                        : IconButton(
-                            icon: const Icon(Icons.close_rounded),
-                            onPressed: () {
-                              _buscaController.clear();
-                              setState(() => _busca = '');
-                            },
-                          ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 10),
+                  child: TextField(
+                    controller: _buscaController,
+                    onChanged: (v) => setState(() => _busca = v),
+                    decoration: InputDecoration(
+                      hintText: 'Buscar por modelo ou marca',
+                      prefixIcon: const Icon(Icons.search_rounded),
+                      suffixIcon: _busca.isEmpty
+                          ? null
+                          : IconButton(
+                              icon: const Icon(Icons.close_rounded),
+                              onPressed: () {
+                                _buscaController.clear();
+                                setState(() => _busca = '');
+                              },
+                            ),
+                    ),
                   ),
                 ),
-              ),
-              SizedBox(
-                height: 40,
-                child: ListView(
-                  scrollDirection: Axis.horizontal,
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  children: [
-                    _chip('Todos', null),
-                    _chip('Tênis', TipoCalcado.tenis),
-                    _chip('Chuteiras', TipoCalcado.chuteira),
-                  ],
+                // Chips horizontais de filtro de tipo esportivo
+                SizedBox(
+                  height: 40,
+                  child: ListView(
+                    scrollDirection: Axis.horizontal,
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    children: [
+                      _chip('Todos', null),
+                      _chip('Tênis', TipoCalcado.tenis),
+                      _chip('Chuteiras', TipoCalcado.chuteira),
+                    ],
+                  ),
                 ),
-              ),
-              const SizedBox(height: 10),
+                const SizedBox(height: 10),
               ],
+              // Lista rolável de calçados ou estados de carregamento/vazio
               Expanded(child: _conteudo()),
             ],
           ),
         ),
       ),
+      // Botão flutuante para cadastrar novo modelo
       floatingActionButton: FloatingActionButton.extended(
         onPressed: _abrirCadastro,
         icon: const Icon(Icons.add, size: 20),
@@ -231,6 +270,7 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
+  /// Chip individual para filtro de categoria
   Widget _chip(String rotulo, TipoCalcado? tipo) {
     return Padding(
       padding: const EdgeInsets.only(right: 8),
@@ -245,6 +285,7 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
+  /// Constrói o corpo principal da tela de acordo com o estado atual
   Widget _conteudo() {
     if (_carregando) return const Center(child: CircularProgressIndicator());
     if (_erro != null) return _EstadoErro(mensagem: _erro!, aoTentar: () => _carregar());
@@ -260,6 +301,7 @@ class _HomePageState extends State<HomePage> {
       );
     }
 
+    // Lista com suporte a pull-to-refresh
     return RefreshIndicator(
       onRefresh: () => _carregar(silencioso: true),
       child: ListView.builder(
@@ -275,7 +317,7 @@ class _HomePageState extends State<HomePage> {
   }
 }
 
-/// Painel escuro com a contagem do catálogo e o estado da conexão.
+/// Painel escuro do topo com indicadores de catálogo e conexão
 class _PainelCatalogo extends StatelessWidget {
   final int total;
   final int tenis;
@@ -291,14 +333,13 @@ class _PainelCatalogo extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Configura texto e cor do indicador de status
     final (Color corStatus, String textoStatus) = switch (status) {
       _StatusApi.conectando => (AppColors.hazard, 'Conectando…'),
       _StatusApi.online => (AppColors.brandLight, 'API conectada'),
       _StatusApi.offline => (AppColors.danger, 'Sem conexão'),
     };
 
-    // Sem conexão não dá para afirmar que o catálogo está vazio:
-    // mostrar "0" seria uma informação falsa. O traço diz "não sei".
     final online = status == _StatusApi.online;
     String n(int v) => online ? '$v' : '—';
 
@@ -385,6 +426,7 @@ class _PainelCatalogo extends StatelessWidget {
   }
 }
 
+/// Linha de leitura com valor em destaque e rótulo explicativo
 class _Leitura extends StatelessWidget {
   final String rotulo;
   final String valor;
@@ -408,6 +450,7 @@ class _Leitura extends StatelessWidget {
   }
 }
 
+/// Estado de erro local
 class _EstadoErro extends StatelessWidget {
   final String mensagem;
   final VoidCallback aoTentar;
@@ -451,6 +494,7 @@ class _EstadoErro extends StatelessWidget {
   }
 }
 
+/// Estado vazio local
 class _EstadoVazio extends StatelessWidget {
   final VoidCallback aoCadastrar;
   const _EstadoVazio({required this.aoCadastrar});
