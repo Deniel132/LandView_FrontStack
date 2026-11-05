@@ -52,6 +52,25 @@ class _DetalhePageState extends State<DetalhePage> {
     super.initState();
     // Inicializa o estado com o calçado passado por parâmetro
     _calcado = widget.calcado;
+    // Reconcilia a grade de tamanhos caso haja distribuição salva localmente
+    _reconciliarGrade();
+  }
+
+  /// Carrega a grade de tamanhos salva no SharedPreferences para garantir que qualquer customização
+  /// individual por numeração permaneça intacta mesmo ao reabrir a página de detalhes.
+  Future<void> _reconciliarGrade() async {
+    // Se o calçado não possuir um identificador numérico válido, encerra a busca
+    final id = _calcado.id;
+    if (id == null) return;
+    // Consulta o armazenamento local por numerações salvas deste calçado
+    final gradeSalva = await Sessao.obterGradeTamanhos(id);
+    // Se não encontrou grade ou o widget foi desmontado da tela, não altera o estado
+    if (gradeSalva == null || gradeSalva.isEmpty || !mounted) return;
+    // Atualiza o estado da tela aplicando a grade salva e equilibrando as quantidades
+    setState(() {
+      final comGrade = _calcado.copyWith(tamanhos: gradeSalva);
+      _calcado = comGrade.copyWith(tamanhos: comGrade.tamanhosComEstoque);
+    });
   }
 
   /// Navega para a tela do provador virtual passando o calçado atual
