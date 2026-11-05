@@ -419,13 +419,20 @@ class ApiService {
         : item.copyWith(estoque: estoqueAtual);
 
     // Recupera a grade de tamanhos detalhada salva no armazenamento local para este calçado
-    final gradeSalva = await Sessao.obterGradeTamanhos(id);
-    // Se houver grade salva localmente, aplica mantendo a coerência com o estoque do backend
-    if (gradeSalva != null && gradeSalva.isNotEmpty) {
-      // Mescla a grade salva na instância de retorno
-      final comGrade = retorno.copyWith(tamanhos: gradeSalva);
-      // Reconcilia proporcionalmente caso o saldo total do banco tenha sido alterado externamente
-      retorno = comGrade.copyWith(tamanhos: comGrade.tamanhosComEstoque);
+    final temGradeNoBanco = retorno.tamanhos.any((t) => t.estoque != null);
+    if (temGradeNoBanco) {
+      // Sincroniza a grade vinda do banco com o estoque atual e atualiza o cache local
+      retorno = retorno.copyWith(tamanhos: retorno.tamanhosComEstoque);
+      await Sessao.salvarGradeTamanhos(id, retorno.tamanhos);
+    } else {
+      final gradeSalva = await Sessao.obterGradeTamanhos(id);
+      // Se houver grade salva localmente, aplica mantendo a coerência com o estoque do backend
+      if (gradeSalva != null && gradeSalva.isNotEmpty) {
+        // Mescla a grade salva na instância de retorno
+        final comGrade = retorno.copyWith(tamanhos: gradeSalva);
+        // Reconcilia proporcionalmente caso o saldo total do banco tenha sido alterado externamente
+        retorno = comGrade.copyWith(tamanhos: comGrade.tamanhosComEstoque);
+      }
     }
 
     // Retorna o objeto calçado final com grade e estoque perfeitamente sincronizados
@@ -625,6 +632,7 @@ class ApiService {
     Map<String, dynamic> prod,
     Map<int, Map<String, dynamic>> categoriasPorId,
     Map<int, Map<String, dynamic>> estoquesPorProdutoId,
+    Map<int, int> vendasPorProdutoId,
   ) {
     final prodId = (prod['id'] as num).toInt();
     final catId = (prod['product_category_id'] as num?)?.toInt();
@@ -659,7 +667,9 @@ class ApiService {
         ? rawTamanhos
         : _tabelaPadrao(comp37Padrao);
 
-    final vendas = (meta['vendas_30_dias'] as num?)?.toInt() ?? 0;
+    // Soma as saídas registradas na tabela de auditoria ou utiliza o metadado salvo
+    final vendas =
+        vendasPorProdutoId[prodId] ?? (meta['vendas_30_dias'] as num?)?.toInt() ?? 0;
     final estoque = (stock?['quantity'] as num?)?.toInt() ?? 0;
 
     // Constrói a instância do Calçado a partir dos dados normalizados.
@@ -677,7 +687,7 @@ class ApiService {
     return (calcado, vendas);
   }
 
-  /// Carrega concorrentemente produtos ativos, categorias e estoques, associando-os em pares (Calçado, Vendas).
+  /// Carrega concorrentemente produtos ativos, categorias, estoques e saídas, associando-os em pares (Calçado, Vendas).
   Future<List<(Calcado, int)>> _carregarTodosComVendas() async {
     final respostas = await Future.wait([
       http
@@ -695,15 +705,36 @@ class ApiService {
             headers: _supabaseHeaders,
           )
           .timeout(_timeout),
+      http
+          .get(
+            _sbUri('/stock_exit_register?select=id_product,quantity'),
+            headers: _supabaseHeaders,
+          )
+          .timeout(_timeout),
     ]);
 
-    // Decodifica as 3 listas retornadas em paralelo.
+    // Decodifica as listas retornadas em paralelo.
     final produtos =
         jsonDecode(utf8.decode(respostas[0].bodyBytes)) as List<dynamic>;
     final categorias =
         jsonDecode(utf8.decode(respostas[1].bodyBytes)) as List<dynamic>;
     final estoques =
         jsonDecode(utf8.decode(respostas[2].bodyBytes)) as List<dynamic>;
+
+    // Acumula o total de vendas por produto a partir dos registros reais de saída
+    final vendasPorProdutoId = <int, int>{};
+    if (respostas.length > 3 && respostas[3].statusCode == 200) {
+      final saidas =
+          jsonDecode(utf8.decode(respostas[3].bodyBytes)) as List<dynamic>;
+      for (final s in saidas) {
+        final mapa = s as Map<String, dynamic>;
+        final pid = (mapa['id_product'] as num?)?.toInt();
+        final qtd = (mapa['quantity'] as num?)?.toInt() ?? 0;
+        if (pid != null) {
+          vendasPorProdutoId[pid] = (vendasPorProdutoId[pid] ?? 0) + qtd;
+        }
+      }
+    }
 
     // Indexa categorias pelo seu ID para busca O(1).
     final categoriasPorId = <int, Map<String, dynamic>>{
@@ -725,6 +756,7 @@ class ApiService {
           p as Map<String, dynamic>,
           categoriasPorId,
           estoquesPorProdutoId,
+          vendasPorProdutoId,
         ),
     ];
   }
@@ -737,9 +769,17 @@ class ApiService {
     final lista = <Calcado>[];
     // Itera por cada calçado recuperado
     for (final (c, _) in pares) {
-      // Se possuir ID numérico válido, busca grade individual persistida
+      // Se possuir ID numérico válido, verifica se o banco já trouxe a grade ou usa a persistida localmente
       if (c.id != null) {
-        // Consulta grade salva no SharedPreferences
+        final temGradeNoBanco = c.tamanhos.any((t) => t.estoque != null);
+        if (temGradeNoBanco) {
+          // Equilibra com o estoque total e atualiza o cache local
+          final ajustado = c.copyWith(tamanhos: c.tamanhosComEstoque);
+          await Sessao.salvarGradeTamanhos(c.id!, ajustado.tamanhos);
+          lista.add(ajustado);
+          continue;
+        }
+        // Consulta grade salva no SharedPreferences caso o banco ainda não tenha sub_characteristics
         final gradeSalva = await Sessao.obterGradeTamanhos(c.id!);
         // Se houver grade salva, aplica conciliando com o estoque do banco
         if (gradeSalva != null && gradeSalva.isNotEmpty) {
@@ -890,7 +930,7 @@ class ApiService {
     // Estrutura de metadados ricos armazenados em JSON.
     final meta = {
       'imagem_url': c.temImagemUrl ? c.imagemUrl!.trim() : null,
-      'tamanhos': c.tamanhos.map((t) => t.toJson()).toList(),
+      'tamanhos': c.tamanhosComEstoque.map((t) => t.toJson()).toList(),
       'vendas_30_dias': 0,
     };
 
@@ -926,6 +966,8 @@ class ApiService {
             body: jsonEncode({
               'id_product': prodId,
               'quantity': c.estoque,
+              'characteristics': c.forma.valor,
+              'sub_characteristics': jsonEncode(meta),
             }),
           )
           .timeout(_timeout);
@@ -984,6 +1026,12 @@ class ApiService {
     // Recupera o registro atual de estoque no banco para identificar o stock_id.
     final stockRow = await _obterStockRowSupabase(id);
 
+    // Estrutura de metadados ricos para persistir imagem e grade individual por tamanho na nuvem
+    final meta = {
+      'imagem_url': c.temImagemUrl ? c.imagemUrl!.trim() : null,
+      'tamanhos': c.tamanhosComEstoque.map((t) => t.toJson()).toList(),
+    };
+
     // 2. Atualiza a quantidade chamando PUT /stock/{stock_id} no Render.
     if (stockRow != null) {
       final stockId = (stockRow['id'] as num).toInt();
@@ -992,7 +1040,12 @@ class ApiService {
           (uri) => http.put(
             uri('/stock/$stockId'),
             headers: _headers,
-            body: jsonEncode({'product_id': id, 'quantity': c.estoque}),
+            body: jsonEncode({
+              'product_id': id,
+              'quantity': c.estoque,
+              'characteristics': c.forma.valor,
+              'sub_characteristics': jsonEncode(meta),
+            }),
           ),
         );
       } on ApiException catch (e) {
@@ -1005,6 +1058,8 @@ class ApiService {
             headers: _supabaseHeaders,
             body: jsonEncode({
               'quantity': c.estoque,
+              'characteristics': c.forma.valor,
+              'sub_characteristics': jsonEncode(meta),
             }),
           )
           .timeout(_timeout);
@@ -1016,6 +1071,8 @@ class ApiService {
             body: jsonEncode({
               'id_product': id,
               'quantity': c.estoque,
+              'characteristics': c.forma.valor,
+              'sub_characteristics': jsonEncode(meta),
             }),
           )
           .timeout(_timeout);
@@ -1138,34 +1195,25 @@ class ApiService {
       if (e.status == 401) rethrow;
     }
 
-    // Tenta registrar a saída na rota oficial POST /stock-exit/ da API
-    try {
-      await _enviar(
-        (uri) => http.post(
-          uri('/stock-exit/'),
-          headers: _headers,
-          body: jsonEncode({
-            'stock_id': stockId,
-            'quantity': quantidade,
-          }),
-        ),
-      );
-    } catch (_) {}
-
-    // Salva o novo saldo no banco de dados.
+    // Salva o novo saldo no banco de dados preservando características e grade.
     await http
         .patch(
           _sbUri('/stock_product?id=eq.$stockId'),
           headers: _supabaseHeaders,
           body: jsonEncode({
             'quantity': novoEstoque,
+            if (stockRow['characteristics'] != null)
+              'characteristics': stockRow['characteristics'],
+            if (stockRow['sub_characteristics'] != null)
+              'sub_characteristics': stockRow['sub_characteristics'],
           }),
         )
         .timeout(_timeout);
 
-    // Registra a operação na tabela de auditoria de saídas (stock_exit_register).
+    // Registra a operação com a quantidade exata vendida na tabela de auditoria (stock_exit_register),
+    // que também alimenta a rota GET /stock-exit/ da API do Render e os indicadores de vendas do Dashboard.
     try {
-      final currentUserId = Sessao.instance.usuario?.id ?? 22;
+      final currentUserId = Sessao.instance.usuario?.id ?? 34;
       await http
           .post(
             _sbUri('/stock_exit_register'),
