@@ -44,11 +44,12 @@ class ApiService {
   // Tempo limite máximo padrão de espera para requisições de rede (35 segundos para acomodar cold start do Render).
   static const _timeout = Duration(seconds: 35);
 
-  // Callbacks opcionais para interceptar chamadas em testes de widget sem tráfego de rede.
+  // Callback opcional para interceptar o registro de venda em testes de widget sem tráfego de rede.
   static Future<VendaRegistrada> Function({
     required int calcadoId,
     required int quantidade,
   })? registrarVendaTeste;
+  // Callback opcional para interceptar a atualização de calçado em testes de widget sem tráfego de rede.
   static Future<Calcado> Function(Calcado calcado)? atualizarTeste;
 
   /// URL base oficial da API no Render (sem a barra final nem /docs).
@@ -387,13 +388,17 @@ class ApiService {
         // Caso contrário, usa a instância do banco com o saldo de estoque atualizado
         : item.copyWith(estoque: estoqueAtual);
 
-    // Recupera a grade de tamanhos detalhada salva no armazenamento local para este calçado
+    // Verifica se o registro do banco de dados já possui distribuição de estoque por numeração
     final temGradeNoBanco = retorno.tamanhos.any((t) => t.estoque != null);
+    // Se a grade já veio preenchida do banco de dados
     if (temGradeNoBanco) {
-      // Sincroniza a grade vinda do banco com o estoque atual e atualiza o cache local
+      // Sincroniza a grade vinda do banco com o estoque atual
       retorno = retorno.copyWith(tamanhos: retorno.tamanhosComEstoque);
+      // Atualiza o cache local no SharedPreferences para este calçado
       await Sessao.salvarGradeTamanhos(id, retorno.tamanhos);
+    // Caso o banco não tenha grade detalhada, consulta o cache local
     } else {
+      // Recupera a grade de tamanhos detalhada salva no armazenamento local para este calçado
       final gradeSalva = await Sessao.obterGradeTamanhos(id);
       // Se houver grade salva localmente, aplica mantendo a coerência com o estoque do backend
       if (gradeSalva != null && gradeSalva.isNotEmpty) {
@@ -668,13 +673,20 @@ class ApiService {
 
     // Acumula o total de vendas por produto a partir dos registros reais de saída
     final vendasPorProdutoId = <int, int>{};
+    // Verifica se a resposta da tabela de saídas retornou com sucesso (HTTP 200)
     if (respostas.length > 3 && respostas[3].statusCode == 200) {
+      // Decodifica a lista JSON de saídas de estoque
       final saidas =
           jsonDecode(utf8.decode(respostas[3].bodyBytes)) as List<dynamic>;
+      // Percorre cada registro de saída para somar as quantidades vendidas por produto
       for (final s in saidas) {
+        // Converte o item atual para mapa chave-valor
         final mapa = s as Map<String, dynamic>;
+        // Extrai o identificador do produto associado à saída
         final pid = (mapa['id_product'] as num?)?.toInt();
+        // Extrai a quantidade baixada na saída (ou zero caso ausente)
         final qtd = (mapa['quantity'] as num?)?.toInt() ?? 0;
+        // Se o produto for válido, soma a quantidade ao acumulador daquele produto
         if (pid != null) {
           vendasPorProdutoId[pid] = (vendasPorProdutoId[pid] ?? 0) + qtd;
         }
@@ -716,12 +728,17 @@ class ApiService {
     for (final (c, _) in pares) {
       // Se possuir ID numérico válido, verifica se o banco já trouxe a grade ou usa a persistida localmente
       if (c.id != null) {
+        // Verifica se alguma numeração veio com estoque individual preenchido do banco de dados
         final temGradeNoBanco = c.tamanhos.any((t) => t.estoque != null);
+        // Caso o banco já possua a distribuição por tamanho salva em sub_characteristics
         if (temGradeNoBanco) {
           // Equilibra com o estoque total e atualiza o cache local
           final ajustado = c.copyWith(tamanhos: c.tamanhosComEstoque);
+          // Sincroniza a grade do banco no SharedPreferences local
           await Sessao.salvarGradeTamanhos(c.id!, ajustado.tamanhos);
+          // Adiciona o calçado ajustado na lista de retorno
           lista.add(ajustado);
+          // Avança para o próximo item
           continue;
         }
         // Consulta grade salva no SharedPreferences caso o banco ainda não tenha sub_characteristics

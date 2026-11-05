@@ -59,8 +59,9 @@ class _DetalhePageState extends State<DetalhePage> {
   /// Carrega a grade de tamanhos salva no SharedPreferences para garantir que qualquer customização
   /// individual por numeração permaneça intacta mesmo ao reabrir a página de detalhes.
   Future<void> _reconciliarGrade() async {
-    // Se o calçado não possuir um identificador numérico válido, encerra a busca
+    // Obtém o identificador numérico do calçado atual
     final id = _calcado.id;
+    // Se o calçado não possuir um identificador numérico válido, encerra a busca
     if (id == null) return;
     // Consulta o armazenamento local por numerações salvas deste calçado
     final gradeSalva = await Sessao.obterGradeTamanhos(id);
@@ -68,7 +69,9 @@ class _DetalhePageState extends State<DetalhePage> {
     if (gradeSalva == null || gradeSalva.isEmpty || !mounted) return;
     // Atualiza o estado da tela aplicando a grade salva e equilibrando as quantidades
     setState(() {
+      // Cria cópia do calçado com a grade recuperada do armazenamento local
       final comGrade = _calcado.copyWith(tamanhos: gradeSalva);
+      // Sincroniza a distribuição da grade com o saldo de estoque total do calçado
       _calcado = comGrade.copyWith(tamanhos: comGrade.tamanhosComEstoque);
     });
   }

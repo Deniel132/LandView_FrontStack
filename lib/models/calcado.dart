@@ -454,9 +454,13 @@ class Calcado {
     };
     // Devolve a grade do 37 ao 45 onde cada número aumenta ~0,667 cm (ponto francês padrão)
     return [
+      // Percorre cada numeração inteira entre 37 e 45
       for (var n = 37; n <= 45; n++)
+        // Instancia a medida individual correspondente à numeração
         MedidaTamanho(
+          // Converte o número do tamanho para ponto flutuante
           numeracao: n.toDouble(),
+          // Calcula o comprimento interno em centímetros arredondado para 1 casa decimal
           comprimentoCm: double.parse(
             (base37 + (n - 37) * 0.667).toStringAsFixed(1),
           ),

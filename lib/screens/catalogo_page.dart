@@ -542,14 +542,22 @@ class _CatalogoPageState extends State<CatalogoPage> {
 
 /// Painel escuro do topo com indicadores de catálogo, unidades totais e valor de estoque
 class _PainelCatalogo extends StatelessWidget {
+  // Quantidade total de modelos cadastrados no catálogo
   final int total;
+  // Quantidade total de modelos da categoria Tênis
   final int tenis;
+  // Quantidade total de modelos da categoria Chuteira
   final int chuteiras;
+  // Soma de todas as unidades físicas disponíveis em estoque
   final int unidades;
+  // Soma financeira total do estoque imobilizado em reais
   final double valorEstoque;
+  // Indica se os dados da tela já foram carregados com sucesso sem erros
   final bool online;
+  // Indica se a tela possui altura reduzida para renderizar versão enxuta
   final bool compacto;
 
+  // Construtor constante com parâmetros obrigatórios do painel de resumo
   const _PainelCatalogo({
     required this.total,
     required this.tenis,
@@ -562,25 +570,35 @@ class _PainelCatalogo extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Função auxiliar que formata números inteiros ou exibe travessão enquanto carrega
     String n(int v) => online ? '$v' : '—';
 
+    // Contêiner principal escuro com cantos arredondados e borda sutil
     return Container(
       decoration: BoxDecoration(
+        // Cor de fundo escura característica do painel superior
         color: AppColors.ink,
+        // Arredondamento amplo dos cantos
         borderRadius: BorderRadius.circular(AppTheme.radiusLg),
+        // Borda translúcida discreta
         border: Border.all(color: Colors.white.withValues(alpha: 0.07)),
       ),
+      // Recorta o conteúdo interno respeitando as bordas arredondadas
       clipBehavior: Clip.antiAlias,
+      // Empilha a faixa azul superior e o conteúdo textual do painel
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          // Faixa decorativa superior na cor azul da marca LandView
           Container(height: 3, color: AppColors.brand),
+          // Renderiza layout compacto caso a altura da janela seja reduzida
           if (compacto)
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 9, 16, 9),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
+                  // Título descritivo do painel compacto
                   Text(
                     'Modelos no catálogo',
                     style: TextStyle(
@@ -588,7 +606,9 @@ class _PainelCatalogo extends StatelessWidget {
                       color: Colors.white.withValues(alpha: 0.65),
                     ),
                   ),
+                  // Espaçamento vertical curto
                   const SizedBox(height: 4),
+                  // Resumo em linha única com contagens de modelos, tipos e unidades
                   Text(
                     '${n(total)} modelos · ${n(tenis)} tênis · ${n(chuteiras)} chuteiras · ${n(unidades)} un.',
                     style: const TextStyle(
@@ -602,12 +622,14 @@ class _PainelCatalogo extends StatelessWidget {
                 ],
               ),
             )
+          // Renderiza layout completo padrão em telas normais
           else
             Padding(
               padding: const EdgeInsets.fromLTRB(22, 18, 22, 18),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  // Rótulo superior do contador principal
                   Text(
                     'Modelos no catálogo',
                     style: TextStyle(
@@ -615,7 +637,9 @@ class _PainelCatalogo extends StatelessWidget {
                       color: Colors.white.withValues(alpha: 0.55),
                     ),
                   ),
+                  // Espaçamento entre o rótulo e o número grande
                   const SizedBox(height: 6),
+                  // Quantidade total de modelos em destaque tipográfico
                   Text(
                     n(total),
                     style: const TextStyle(
@@ -625,18 +649,27 @@ class _PainelCatalogo extends StatelessWidget {
                       letterSpacing: -1,
                     ),
                   ),
+                  // Espaçamento antes das métricas secundárias
                   const SizedBox(height: 14),
+                  // Agrupamento responsivo das métricas detalhadas do estoque
                   Wrap(
                     spacing: 20,
                     runSpacing: 10,
                     crossAxisAlignment: WrapCrossAlignment.center,
                     children: [
+                      // Métrica de quantidade de tênis
                       _Leitura(rotulo: 'Tênis', valor: n(tenis)),
+                      // Divisor vertical sutil
                       const _DivisorVertical(),
+                      // Métrica de quantidade de chuteiras
                       _Leitura(rotulo: 'Chuteiras', valor: n(chuteiras)),
+                      // Divisor vertical sutil
                       const _DivisorVertical(),
+                      // Métrica do total de pares/unidades em estoque
                       _Leitura(rotulo: 'Unidades', valor: n(unidades)),
+                      // Divisor vertical sutil
                       const _DivisorVertical(),
+                      // Métrica do valor financeiro total acumulado em estoque
                       _Leitura(
                         rotulo: 'Valor em estoque',
                         valor: online ? Formato.real(valorEstoque) : '—',
@@ -652,12 +685,14 @@ class _PainelCatalogo extends StatelessWidget {
   }
 }
 
-/// Linha divisória vertical
+/// Linha divisória vertical utilizada entre as métricas do painel escuro
 class _DivisorVertical extends StatelessWidget {
+  // Construtor constante do divisor vertical
   const _DivisorVertical();
 
   @override
   Widget build(BuildContext context) {
+    // Caixa fina de 1px de largura por 28px de altura com branco translúcido
     return Container(
       width: 1,
       height: 28,
@@ -666,17 +701,22 @@ class _DivisorVertical extends StatelessWidget {
   }
 }
 
-/// Bloco de leitura de métrica
+/// Bloco de leitura de métrica contendo valor em destaque e rótulo descritivo abaixo
 class _Leitura extends StatelessWidget {
+  // Rótulo textual da métrica (ex: "Tênis", "Unidades")
   final String rotulo;
+  // Valor formatado da métrica
   final String valor;
+  // Construtor constante do bloco de leitura
   const _Leitura({required this.rotulo, required this.valor});
 
   @override
   Widget build(BuildContext context) {
+    // Empilha o valor numérico acima do rótulo descritivo
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        // Exibe o valor principal em branco seminegrito
         Text(
           valor,
           style: const TextStyle(
@@ -685,6 +725,7 @@ class _Leitura extends StatelessWidget {
             fontWeight: FontWeight.w600,
           ),
         ),
+        // Exibe o rótulo secundário com opacidade suave
         Text(
           rotulo,
           style: TextStyle(
