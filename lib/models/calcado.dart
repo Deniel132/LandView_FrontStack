@@ -440,4 +440,27 @@ class Calcado {
     // Grava o total de vendas dos 30 dias
     'vendas_30_dias': vendas30Dias,
   };
+
+  /// Gera uma tabela padrão de medidas anatômicas (do tamanho 37 ao 45) com base na forma do calçado.
+  static List<MedidaTamanho> gerarTabelaPadrao(FormaCalcado forma) {
+    // Determina o comprimento inicial do tamanho 37 de acordo com a forma (estreita, padrão ou larga)
+    final base37 = switch (forma) {
+      // Forma estreita: 24,9 cm no 37
+      FormaCalcado.estreita => 24.9,
+      // Forma padrão: 25,0 cm no 37
+      FormaCalcado.padrao => 25.0,
+      // Forma larga: 25,2 cm no 37
+      FormaCalcado.larga => 25.2,
+    };
+    // Devolve a grade do 37 ao 45 onde cada número aumenta ~0,667 cm (ponto francês padrão)
+    return [
+      for (var n = 37; n <= 45; n++)
+        MedidaTamanho(
+          numeracao: n.toDouble(),
+          comprimentoCm: double.parse(
+            (base37 + (n - 37) * 0.667).toStringAsFixed(1),
+          ),
+        ),
+    ];
+  }
 }

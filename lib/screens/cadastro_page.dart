@@ -8,8 +8,6 @@ import 'package:flutter/services.dart';
 import '../models/calcado.dart';
 // Importa o cliente de API para criar ou atualizar produtos
 import '../services/api_service.dart';
-// Importa a camada de dados de demonstração para gerar grade padrão
-import '../services/dados_demo.dart';
 // Importa as configurações visuais de tema
 import '../theme/app_theme.dart';
 // Importa utilitários de formatação de moeda e medidas
@@ -142,7 +140,7 @@ class _CadastroPageState extends State<CadastroPage> {
   void _gerarGradePadrao() {
     setState(() {
       final estoqueAtual = int.tryParse(_estoqueController.text.trim()) ?? 18;
-      final padrao = DadosDemo.gerarTabelaPadrao(_forma);
+      final padrao = Calcado.gerarTabelaPadrao(_forma);
       for (final item in padrao) {
         if (!_tamanhos.any((t) => t.numeracao == item.numeracao)) {
           _tamanhos.add(item);
@@ -234,8 +232,6 @@ class _CadastroPageState extends State<CadastroPage> {
           ? (_imagemController.text.trim().isNotEmpty
                 ? _imagemController.text.trim()
                 : (_imagemPreview != null ? widget.calcado?.imagemUrl : null))
-          : ApiService.modoDemo
-          ? null
           : await ApiService.instance.enviarImagem(
               _imagemPreview!,
               _arquivoImagem!.name,

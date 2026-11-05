@@ -23,9 +23,6 @@ import 'cadastro_page.dart';
 // Importa a tela de detalhes do calçado
 import 'detalhe_page.dart';
 
-/// Enum local para o status visual da conexão com a API
-enum _StatusApi { conectando, online, offline, demonstracao }
-
 /// Opções de filtro por situação de estoque
 enum _FiltroEstoque {
   todos('Todos'),
@@ -120,13 +117,6 @@ class _CatalogoPageState extends State<CatalogoPage> {
         _carregando = false;
       });
     }
-  }
-
-  /// Retorna o status de conexão atual
-  _StatusApi get _status {
-    if (ApiService.modoDemo) return _StatusApi.demonstracao;
-    if (_carregando) return _StatusApi.conectando;
-    return _erro == null ? _StatusApi.online : _StatusApi.offline;
   }
 
   /// Indica se existem calçados carregados na lista
@@ -312,7 +302,7 @@ class _CatalogoPageState extends State<CatalogoPage> {
                       .length,
                   unidades: totalUnidades,
                   valorEstoque: valorTotalEstoque,
-                  status: _status,
+                  online: !_carregando && _erro == null,
                   compacto: compacto,
                 ),
               ),
@@ -557,7 +547,7 @@ class _PainelCatalogo extends StatelessWidget {
   final int chuteiras;
   final int unidades;
   final double valorEstoque;
-  final _StatusApi status;
+  final bool online;
   final bool compacto;
 
   const _PainelCatalogo({
@@ -566,22 +556,12 @@ class _PainelCatalogo extends StatelessWidget {
     required this.chuteiras,
     required this.unidades,
     required this.valorEstoque,
-    required this.status,
+    required this.online,
     required this.compacto,
   });
 
   @override
   Widget build(BuildContext context) {
-    // Configura o indicador de status
-    final (Color corStatus, String textoStatus) = switch (status) {
-      _StatusApi.conectando => (AppColors.hazard, 'Conectando…'),
-      _StatusApi.online => (AppColors.brandLight, 'API conectada'),
-      _StatusApi.offline => (AppColors.danger, 'Sem conexão'),
-      _StatusApi.demonstracao => (AppColors.infoLight, 'Demonstração'),
-    };
-
-    final online =
-        status == _StatusApi.online || status == _StatusApi.demonstracao;
     String n(int v) => online ? '$v' : '—';
 
     return Container(
@@ -601,38 +581,12 @@ class _PainelCatalogo extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text(
-                        'Modelos no catálogo',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: Colors.white.withValues(alpha: 0.65),
-                        ),
-                      ),
-                      Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Container(
-                            width: 8,
-                            height: 8,
-                            decoration: BoxDecoration(
-                              color: corStatus,
-                              shape: BoxShape.circle,
-                            ),
-                          ),
-                          const SizedBox(width: 5),
-                          Text(
-                            textoStatus,
-                            style: TextStyle(
-                              fontSize: 11,
-                              color: Colors.white.withValues(alpha: 0.75),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
+                  Text(
+                    'Modelos no catálogo',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Colors.white.withValues(alpha: 0.65),
+                    ),
                   ),
                   const SizedBox(height: 4),
                   Text(
@@ -645,58 +599,21 @@ class _PainelCatalogo extends StatelessWidget {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
-                  Text(
-                    ApiService.modoDemo
-                        ? 'Modo demonstração (sem API)'
-                        : ApiService.baseUrl,
-                    style: TextStyle(
-                      fontSize: 10,
-                      color: Colors.white.withValues(alpha: 0.45),
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
                 ],
               ),
             )
           else
             Padding(
-              padding: const EdgeInsets.fromLTRB(22, 18, 22, 16),
+              padding: const EdgeInsets.fromLTRB(22, 18, 22, 18),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text(
-                        'Modelos no catálogo',
-                        style: TextStyle(
-                          fontSize: 12.5,
-                          color: Colors.white.withValues(alpha: 0.55),
-                        ),
-                      ),
-                      Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Container(
-                            width: 8,
-                            height: 8,
-                            decoration: BoxDecoration(
-                              color: corStatus,
-                              shape: BoxShape.circle,
-                            ),
-                          ),
-                          const SizedBox(width: 6),
-                          Text(
-                            textoStatus,
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: Colors.white.withValues(alpha: 0.7),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
+                  Text(
+                    'Modelos no catálogo',
+                    style: TextStyle(
+                      fontSize: 12.5,
+                      color: Colors.white.withValues(alpha: 0.55),
+                    ),
                   ),
                   const SizedBox(height: 6),
                   Text(
@@ -725,16 +642,6 @@ class _PainelCatalogo extends StatelessWidget {
                         valor: online ? Formato.real(valorEstoque) : '—',
                       ),
                     ],
-                  ),
-                  const SizedBox(height: 12),
-                  Text(
-                    ApiService.modoDemo
-                        ? 'Modo demonstração (sem API)'
-                        : ApiService.baseUrl,
-                    style: TextStyle(
-                      fontSize: 11.5,
-                      color: Colors.white.withValues(alpha: 0.4),
-                    ),
                   ),
                 ],
               ),

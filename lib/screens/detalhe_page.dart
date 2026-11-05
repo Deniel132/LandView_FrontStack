@@ -117,11 +117,8 @@ class _DetalhePageState extends State<DetalhePage> {
           .descontarDoTamanho(numeracao, quantidade)
           .copyWith(estoque: venda.estoqueAtual);
 
-      // Salva a nova grade detalhada no armazenamento local garantindo persistência imediata (fora do modo demo)
-      if (!ApiService.modoDemo) {
-        // Grava no SharedPreferences
-        await Sessao.salvarGradeTamanhos(calcadoId, aposDesconto.tamanhos);
-      }
+      // Salva a nova grade detalhada no armazenamento local garantindo persistência imediata
+      await Sessao.salvarGradeTamanhos(calcadoId, aposDesconto.tamanhos);
 
       // Sincroniza a nova quantidade total no backend
       try {
@@ -173,11 +170,8 @@ class _DetalhePageState extends State<DetalhePage> {
       final gradeAjustada = _c.copyWith(estoque: novoEstoque).tamanhosComEstoque;
       // Cria a nova instância com o estoque ajustado e a grade equilibrada
       final calcadoNovo = _c.copyWith(estoque: novoEstoque, tamanhos: gradeAjustada);
-      // Salva a nova grade de tamanhos no armazenamento local (fora do modo demonstração)
-      if (!ApiService.modoDemo) {
-        // Grava no SharedPreferences
-        await Sessao.salvarGradeTamanhos(_c.id!, gradeAjustada);
-      }
+      // Salva a nova grade de tamanhos no armazenamento local
+      await Sessao.salvarGradeTamanhos(_c.id!, gradeAjustada);
       // Sincroniza a alteração de estoque no backend
       final atualizado = await ApiService.instance.atualizar(calcadoNovo);
       if (!mounted) return;
@@ -224,11 +218,8 @@ class _DetalhePageState extends State<DetalhePage> {
         medida.numeracao,
         novaQtd,
       );
-      // Salva a nova grade de tamanhos no armazenamento local (fora do modo demonstração)
-      if (!ApiService.modoDemo) {
-        // Grava no SharedPreferences
-        await Sessao.salvarGradeTamanhos(_c.id!, calcadoNovo.tamanhos);
-      }
+      // Salva a nova grade de tamanhos no armazenamento local
+      await Sessao.salvarGradeTamanhos(_c.id!, calcadoNovo.tamanhos);
       // Sincroniza a atualização no backend
       final atualizado = await ApiService.instance.atualizar(calcadoNovo);
       if (!mounted) return;

@@ -26,8 +26,6 @@ import '../utils/criptografia_senha.dart';
 import '../utils/formato.dart';
 // Exceção customizada da aplicação para transporte de erros e status HTTP.
 import 'api_exception.dart';
-// Conjunto de dados simulados em memória para quando o app roda em modo de demonstração.
-import 'dados_demo.dart';
 // Gerenciador central de sessão do usuário e persistência do token de acesso.
 import 'sessao.dart';
 
@@ -46,16 +44,12 @@ class ApiService {
   // Tempo limite máximo padrão de espera para requisições de rede (35 segundos para acomodar cold start do Render).
   static const _timeout = Duration(seconds: 35);
 
-  /// Flag que determina se o app roda conectado à API real ou com dados simulados locais.
-  /// Por padrão é falso (conecta à API no Render). Pode ser ativado via: `--dart-define=DEMO=true`.
-  static const bool _modoDemoEnv = bool.fromEnvironment(
-    'DEMO',
-    defaultValue: false,
-  );
-  // Permite sobrescrever o modo demonstração em tempo de execução (útil em testes automatizados).
-  static bool? modoDemoOverride;
-  // Getter público que retorna o estado atual do modo de demonstração.
-  static bool get modoDemo => modoDemoOverride ?? _modoDemoEnv;
+  // Callbacks opcionais para interceptar chamadas em testes de widget sem tráfego de rede.
+  static Future<VendaRegistrada> Function({
+    required int calcadoId,
+    required int quantidade,
+  })? registrarVendaTeste;
+  static Future<Calcado> Function(Calcado calcado)? atualizarTeste;
 
   /// URL base oficial da API no Render (sem a barra final nem /docs).
   /// Permite apontar para outro servidor (como localhost) via:
@@ -112,21 +106,6 @@ class ApiService {
   /// Autentica o usuário no sistema criptografando a senha no frontend (`enc:v1:...`),
   /// chama a rota oficial `POST /api/user/login` do Render e inicializa a sessão do app.
   Future<Usuario> login(String email, String senha) async {
-    // Se o app estiver em modo de demonstração, valida nos dados mockados locais.
-    if (modoDemo) {
-      // Autentica nos dados simulados
-      var usuario = await DadosDemo.instance.login(email);
-      // Verifica se o usuário definiu um nome de exibição personalizado para este e-mail
-      final nomeCustom = await Sessao.obterNomeCustomizado(email);
-      // Se houver nome personalizado salvo, aplica ao usuário logado
-      if (nomeCustom != null && nomeCustom.isNotEmpty) {
-        usuario = usuario.copyWith(nome: nomeCustom);
-      }
-      // Inicia a sessão ativa com o token de demonstração
-      Sessao.instance.iniciar('token-demo', usuario);
-      return usuario;
-    }
-
     // Remove espaços em branco do e-mail.
     final emailLimpo = email.trim();
     // Criptografa a senha para envio seguro pela rede.
@@ -260,12 +239,6 @@ class ApiService {
     String senha, {
     String role = 'SELLER',
   }) async {
-    // Se estiver em modo demonstração, registra na memória local de testes.
-    if (modoDemo) {
-      await DadosDemo.instance.criarConta(email, senha, role: role);
-      return;
-    }
-
     // Sanitiza e padroniza os campos antes do envio.
     final emailLimpo = email.trim();
     final senhaCriptografada = CriptografiaSenha.criptografar(senha);
@@ -341,7 +314,6 @@ class ApiService {
 
   /// Retorna os dados consolidados do painel da loja (totais, mais vendidos, estoque baixo/alto e extremos).
   Future<Dashboard> dashboard() async {
-    if (modoDemo) return DadosDemo.instance.dashboard();
     return _dashboardIntegrado();
   }
 
@@ -349,15 +321,12 @@ class ApiService {
 
   /// Retorna a listagem de todos os modelos de calçados cadastrados no catálogo.
   Future<List<Calcado>> listar() async {
-    if (modoDemo) return DadosDemo.instance.listar();
     return _listarIntegrado();
   }
 
   /// Consulta um calçado específico pelo ID combinando produto (`GET /product/{id}`),
   /// categoria (`GET /category/{id}`) e quantidade de estoque (`GET /stock/{id}`).
   Future<Calcado> buscar(int id) async {
-    if (modoDemo) return DadosDemo.instance.buscar(id);
-
     // 1. Consulta a rota GET /product/{id} na API oficial do Render.
     Map<String, dynamic>? produtoRender;
     try {
@@ -441,12 +410,6 @@ class ApiService {
 
   /// Converte a foto selecionada em bytes para data URI Base64 pronta para persistência.
   Future<String> enviarImagem(Uint8List bytes, String nomeArquivo) async {
-    // No modo demonstração o upload não é permitido.
-    if (modoDemo) {
-      throw ApiException(
-        'O envio de fotos não está disponível no modo demonstração.',
-      );
-    }
     // Determina o tipo MIME com base na extensão do arquivo de imagem.
     final lower = nomeArquivo.toLowerCase();
     final mime = (lower.endsWith('.jpg') || lower.endsWith('.jpeg'))
@@ -461,21 +424,19 @@ class ApiService {
   /// Cria categoria (`POST /category/`), produto (`POST /product/`) e estoque (`POST /stock/`)
   /// de forma sincronizada na API do Render e no banco de dados.
   Future<Calcado> criar(Calcado calcado) async {
-    if (modoDemo) return DadosDemo.instance.criar(calcado);
     return _criarIntegrado(calcado);
   }
 
   /// Atualiza os dados de produto (`PUT /product/{id}`) e estoque (`PUT /stock/{id}`)
   /// no Render e no banco compartilhado.
   Future<Calcado> atualizar(Calcado calcado) async {
-    if (modoDemo) return DadosDemo.instance.atualizar(calcado);
+    if (atualizarTeste != null) return atualizarTeste!(calcado);
     return _atualizarIntegrado(calcado);
   }
 
   /// Remove o estoque (`DELETE /stock/{id}`) e o produto (`DELETE /product/{id}`)
   /// utilizando as rotas oficiais de exclusão da API.
   Future<void> excluir(int id) async {
-    if (modoDemo) return DadosDemo.instance.excluir(id);
     await _excluirIntegrado(id);
   }
 
@@ -485,8 +446,8 @@ class ApiService {
     required int calcadoId,
     required int quantidade,
   }) async {
-    if (modoDemo) {
-      return DadosDemo.instance.registrarVenda(
+    if (registrarVendaTeste != null) {
+      return registrarVendaTeste!(
         calcadoId: calcadoId,
         quantidade: quantidade,
       );
@@ -504,14 +465,6 @@ class ApiService {
     int? idProduct,
     int? idStock,
   }) async {
-    if (modoDemo) {
-      return DadosDemo.instance.listarSaidas(
-        page: page,
-        pageSize: pageSize,
-        idProduct: idProduct,
-      );
-    }
-
     // Constrói os parâmetros de consulta na URL.
     final queryParams = <String, String>{
       'page': page.toString(),
@@ -586,14 +539,6 @@ class ApiService {
     double? numeracaoHabitual,
     String? marcaHabitual,
   }) async {
-    if (modoDemo) {
-      return DadosDemo.instance.recomendar(
-        calcadoId: calcadoId,
-        medidaPeCm: medidaPeCm,
-        numeracaoHabitual: numeracaoHabitual,
-        marcaHabitual: marcaHabitual,
-      );
-    }
     return _recomendarIntegrado(
       calcadoId: calcadoId,
       medidaPeCm: medidaPeCm,

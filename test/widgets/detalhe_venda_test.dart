@@ -1,16 +1,20 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:parte2_flutter/models/calcado.dart';
+import 'package:parte2_flutter/models/venda.dart';
 import 'package:parte2_flutter/screens/detalhe_page.dart';
 import 'package:parte2_flutter/services/api_service.dart';
-import 'package:parte2_flutter/services/dados_demo.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
   setUp(() {
     SharedPreferences.setMockInitialValues({});
-    ApiService.modoDemoOverride = true;
   });
-  tearDown(() => ApiService.modoDemoOverride = null);
+
+  tearDown(() {
+    ApiService.registrarVendaTeste = null;
+    ApiService.atualizarTeste = null;
+  });
 
   testWidgets('registra quantidade escolhida e atualiza estoque no detalhe', (
     tester,
@@ -20,11 +24,35 @@ void main() {
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
 
-    // Obtém o primeiro modelo da lista que possui pelo menos 2 unidades disponíveis no primeiro tamanho da grade
-    final calcado = (await tester.runAsync(DadosDemo.instance.listar))!
-        .firstWhere((c) => (c.tamanhosComEstoque.first.estoque ?? 0) >= 2);
+    final calcado = Calcado(
+      id: 1,
+      nome: 'Air Zoom Pegasus 40',
+      marca: 'Nike',
+      tipo: TipoCalcado.tenis,
+      forma: FormaCalcado.padrao,
+      preco: 799.90,
+      estoque: 18,
+      tamanhos: Calcado.gerarTabelaPadrao(FormaCalcado.padrao),
+    );
     final estoqueAntes = calcado.estoque;
-    final id = calcado.id!;
+
+    Calcado? calcadoSalvoNoBackend;
+    ApiService.registrarVendaTeste = ({
+      required int calcadoId,
+      required int quantidade,
+    }) async {
+      return VendaRegistrada(
+        id: 100,
+        calcadoId: calcadoId,
+        quantidade: quantidade,
+        estoqueAtual: estoqueAntes - quantidade,
+        dataVenda: DateTime.now(),
+      );
+    };
+    ApiService.atualizarTeste = (c) async {
+      calcadoSalvoNoBackend = c;
+      return c;
+    };
 
     await tester.pumpWidget(MaterialApp(home: DetalhePage(calcado: calcado)));
     await tester.ensureVisible(find.text('Registrar venda'));
@@ -45,9 +73,6 @@ void main() {
 
     expect(find.text('${estoqueAntes - 2} unidades'), findsOneWidget);
     expect(find.textContaining('Venda registrada: 2 unidades'), findsOneWidget);
-    final calcadoAtualizado = await tester.runAsync(
-      () => DadosDemo.instance.buscar(id),
-    );
-    expect(calcadoAtualizado!.estoque, estoqueAntes - 2);
+    expect(calcadoSalvoNoBackend?.estoque, estoqueAntes - 2);
   });
 }

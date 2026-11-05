@@ -35,15 +35,11 @@ class _LoginPageState extends State<LoginPage> {
   // Chave global para validação do formulário de login
   final _formKey = GlobalKey<FormState>();
 
-  // Controlador do campo de e-mail (preenche valor padrão se estiver em modo demonstração)
-  final _emailController = TextEditingController(
-    text: ApiService.modoDemo ? 'cliente@loja.com' : '',
-  );
+  // Controlador do campo de e-mail
+  final _emailController = TextEditingController();
 
-  // Controlador do campo de senha (preenche valor padrão se estiver em modo demonstração)
-  final _senhaController = TextEditingController(
-    text: ApiService.modoDemo ? 'demonstracao' : '',
-  );
+  // Controlador do campo de senha
+  final _senhaController = TextEditingController();
 
   // Controla se a senha digitada deve ficar oculta (com pontinhos) ou visível
   bool _ocultarSenha = true;
@@ -285,31 +281,6 @@ class _LoginPageState extends State<LoginPage> {
                                 onPressed: _entrando ? null : _abrirCriarConta,
                                 child: const Text('Criar uma conta'),
                               ),
-                              // Mensagem informativa explicativa caso o app esteja rodando em modo demo
-                              if (ApiService.modoDemo) ...[
-                                const SizedBox(height: 14),
-                                Row(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Icon(
-                                      Icons.info_outline_rounded,
-                                      size: 16,
-                                      color: context.textMuted,
-                                    ),
-                                    const SizedBox(width: 8),
-                                    Expanded(
-                                      child: Text(
-                                        'Modo demonstração ativo: entre com qualquer e-mail válido e qualquer senha.',
-                                        style: TextStyle(
-                                          fontSize: 12.5,
-                                          height: 1.35,
-                                          color: context.textMuted,
-                                        ),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ],
                             ],
                           ),
                         ),

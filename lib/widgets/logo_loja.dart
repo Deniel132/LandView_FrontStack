@@ -7,8 +7,6 @@ import '../config/loja.dart';
 import '../models/usuario.dart';
 // Importa a tela de login para redirecionamento após logout
 import '../screens/login_page.dart';
-// Importa o serviço de API para checar se está em modo demo ou conectado
-import '../services/api_service.dart';
 // Importa o gerenciador da sessão ativa
 import '../services/sessao.dart';
 // Importa as configurações visuais de tema e cores
@@ -211,34 +209,6 @@ class MarcaAppBar extends StatelessWidget {
                     Text(
                       email,
                       style: TextStyle(fontSize: 12, color: context.textMuted),
-                    ),
-                    const SizedBox(height: 6),
-                    // Etiqueta indicando se está conectado à API real ou em modo demonstração
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 8,
-                        vertical: 3,
-                      ),
-                      decoration: BoxDecoration(
-                        color:
-                            (ApiService.modoDemo
-                                    ? AppColors.hazard
-                                    : AppColors.success)
-                                .withValues(alpha: 0.14),
-                        borderRadius: BorderRadius.circular(6),
-                      ),
-                      child: Text(
-                        ApiService.modoDemo
-                            ? 'Modo demonstração'
-                            : 'Conectado à API',
-                        style: TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w600,
-                          color: ApiService.modoDemo
-                              ? AppColors.hazard
-                              : AppColors.success,
-                        ),
-                      ),
                     ),
                   ],
                 ),
