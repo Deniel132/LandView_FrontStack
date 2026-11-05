@@ -275,6 +275,7 @@ lib/
 test/
 ├── fluxo_daniel_test.dart               # Teste ponta a ponta (cadastro, login, produto, venda e auditoria)
 ├── validacao_venda_estoque_test.dart    # Validação de baixa por numeração e persistência no banco
+├── seguranca_test.dart                  # Testes de segurança (criptografia, RBAC, sessão, sanitização e login)
 ├── models/api_models_test.dart          # Conversão de JSON e regras de negócio de modelos
 └── widgets/
     ├── contato_loja_test.dart           # Asset do logo e rodapé
