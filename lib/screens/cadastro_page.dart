@@ -1,20 +1,32 @@
+// Importa o seletor de arquivos multiplataforma (web e desktop)
 import 'package:file_selector/file_selector.dart';
+// Importa os componentes gráficos do Flutter
 import 'package:flutter/material.dart';
+// Importa formatadores de entrada de texto e números
 import 'package:flutter/services.dart';
+// Importa o modelo de calçado e medidas de tamanho
 import '../models/calcado.dart';
+// Importa o cliente de API para criar ou atualizar produtos
 import '../services/api_service.dart';
+// Importa a camada de dados de demonstração para gerar grade padrão
 import '../services/dados_demo.dart';
+// Importa as configurações visuais de tema
 import '../theme/app_theme.dart';
+// Importa utilitários de formatação de moeda e medidas
 import '../utils/formato.dart';
+// Importa faixas visuais de aviso e erro
 import '../widgets/estados.dart';
+// Importa o botão de perfil da AppBar
 import '../widgets/logo_loja.dart';
 
-/// Cria (POST) ou edita (PUT) um modelo de calçado. A própria tela chama a
-/// API: se der erro, a mensagem aparece aqui e o que foi digitado é mantido.
-/// Ao concluir, devolve um texto para a tela anterior mostrar em SnackBar.
+/// Tela de Formulário para Criação (POST) ou Edição (PUT) de um modelo de calçado.
+/// Permite cadastrar nome, marca, preço, estoque, selecionar foto local ou URL,
+/// definir tipo (tênis/chuteira), largura da forma e gerenciar a grade completa de tamanhos com estoques individuais.
 class CadastroPage extends StatefulWidget {
+  /// Calçado a ser editado (caso nulo, opera em modo de criação de novo produto)
   final Calcado? calcado;
 
+  /// Construtor com calçado opcional
   const CadastroPage({super.key, this.calcado});
 
   @override
@@ -22,29 +34,55 @@ class CadastroPage extends StatefulWidget {
 }
 
 class _CadastroPageState extends State<CadastroPage> {
+  // Chave global de controle do formulário
   final _formKey = GlobalKey<FormState>();
+
+  // Controlador do campo de nome do calçado
   final _nomeController = TextEditingController();
+
+  // Controlador do campo de marca fabricante
   final _marcaController = TextEditingController();
+
+  // Controlador do campo de preço de venda
   final _precoController = TextEditingController();
+
+  // Controlador do campo de estoque total consolidado
   final _estoqueController = TextEditingController(text: '0');
+
+  // Controlador do campo opcional de URL externa da imagem
   final _imagemController = TextEditingController();
 
+  // Armazena o arquivo de foto selecionado no dispositivo
   XFile? _arquivoImagem;
+
+  // Armazena os bytes brutos da foto para pré-visualização instantânea na tela
   Uint8List? _imagemPreview;
+
+  // Categoria esportiva selecionada (Tênis ou Chuteira)
   TipoCalcado _tipo = TipoCalcado.tenis;
+
+  // Formato da forma selecionado (Estreita, Padrão ou Larga)
   FormaCalcado _forma = FormaCalcado.padrao;
+
+  // Lista dinâmica com a grade de tamanhos e seus respectivos estoques individuais
   final List<MedidaTamanho> _tamanhos = [];
 
+  // Flag indicadora de processo de salvamento em andamento
   bool _salvando = false;
+
+  // Mensagem de erro retornada pela API
   String? _erroApi;
+
+  // Mensagem de validação da tabela de tamanhos
   String? _erroTabela;
 
+  // Flag indicadora se estamos editando um produto existente ou criando um novo
   bool get _editando => widget.calcado != null;
 
-  /// Preenche os campos quando a tela foi aberta para editar um calçado.
   @override
   void initState() {
     super.initState();
+    // Se estiver em modo de edição, pré-popula todos os campos com os dados do calçado
     final c = widget.calcado;
     if (c != null) {
       _nomeController.text = c.nome;
@@ -64,6 +102,7 @@ class _CadastroPageState extends State<CadastroPage> {
 
   @override
   void dispose() {
+    // Libera a memória ocupada por todos os controladores ao fechar a tela
     _nomeController.dispose();
     _marcaController.dispose();
     _precoController.dispose();
@@ -72,8 +111,9 @@ class _CadastroPageState extends State<CadastroPage> {
     super.dispose();
   }
 
-  /// Abre o formulário de uma numeração (nova ou edição) e atualiza a tabela.
+  /// Abre a janela de diálogo para adicionar um novo tamanho ou alterar a medida e o estoque de um tamanho existente
   Future<void> _editarOuAdicionarTamanho([MedidaTamanho? inicial]) async {
+    // Exibe o diálogo modal e aguarda o objeto retornado
     final novo = await showDialog<MedidaTamanho>(
       context: context,
       builder: (_) => _DialogoTamanho(inicial: inicial),
@@ -83,10 +123,13 @@ class _CadastroPageState extends State<CadastroPage> {
       if (inicial != null) {
         _tamanhos.remove(inicial);
       }
-      // Mesma numeração digitada duas vezes: a nova substitui a antiga.
+      // Se a numeração já existia na lista, remove a anterior para substituir pela nova
       _tamanhos.removeWhere((t) => t.numeracao == novo.numeracao);
       _tamanhos.add(novo);
+      // Mantém a tabela sempre em ordem crescente de numeração
       _tamanhos.sort((a, b) => a.numeracao.compareTo(b.numeracao));
+
+      // Se a grade tiver estoques individuais, recalcula a soma e atualiza o campo de estoque geral
       if (_tamanhos.any((t) => t.estoque != null)) {
         final soma = _tamanhos.fold<int>(0, (s, t) => s + (t.estoque ?? 0));
         _estoqueController.text = soma.toString();
@@ -95,7 +138,7 @@ class _CadastroPageState extends State<CadastroPage> {
     });
   }
 
-  /// Preenche automaticamente a grade padrão do 37 ao 45 conforme a forma.
+  /// Gera e preenche automaticamente a grade do tamanho 37 ao 45 baseada na forma selecionada
   void _gerarGradePadrao() {
     setState(() {
       final estoqueAtual = int.tryParse(_estoqueController.text.trim()) ?? 18;
@@ -119,9 +162,10 @@ class _CadastroPageState extends State<CadastroPage> {
     });
   }
 
-  /// Abre o seletor de arquivos e mantém a foto em memória até enviá-la à API.
+  /// Abre a janela do explorador de arquivos para escolher uma foto no computador ou celular
   Future<void> _selecionarImagem() async {
     try {
+      // Abre o seletor nativo de arquivos filtrando por extensões de imagem
       final arquivo = await openFile(
         acceptedTypeGroups: const [
           XTypeGroup(
@@ -133,10 +177,12 @@ class _CadastroPageState extends State<CadastroPage> {
       );
       if (arquivo == null) return;
 
+      // Lê os bytes brutos do arquivo selecionado
       final bytes = await arquivo.readAsBytes();
       if (bytes.isEmpty) {
         throw const FormatException('O arquivo selecionado está vazio.');
       }
+      // Valida limite máximo de 5MB por foto
       if (bytes.length > 5 * 1024 * 1024) {
         throw const FormatException('A foto deve ter no máximo 5 MB.');
       }
@@ -158,7 +204,7 @@ class _CadastroPageState extends State<CadastroPage> {
     }
   }
 
-  /// Exibe falhas de seleção imediatamente, sem exigir que a pessoa role o formulário.
+  /// Exibe erros ocorridos durante a seleção de imagens
   void _mostrarErroImagem(String mensagem) {
     setState(() => _erroApi = mensagem);
     ScaffoldMessenger.of(context)
@@ -166,7 +212,7 @@ class _CadastroPageState extends State<CadastroPage> {
       ..showSnackBar(SnackBar(content: Text(mensagem)));
   }
 
-  /// Valida os campos e envia o cadastro ou a edição à API.
+  /// Valida todas as seções e salva o calçado na API
   Future<void> _salvar() async {
     final formOk = _formKey.currentState?.validate() ?? false;
     setState(() {
@@ -174,6 +220,7 @@ class _CadastroPageState extends State<CadastroPage> {
           ? 'Adicione ao menos um tamanho à tabela.'
           : null;
     });
+    // Se houver erro de validação ou a tabela estiver vazia, interrompe o envio
     if (!formOk || _tamanhos.isEmpty) return;
 
     setState(() {
@@ -182,17 +229,19 @@ class _CadastroPageState extends State<CadastroPage> {
     });
 
     try {
+      // Processa a URL da imagem ou envia a foto selecionada
       final imagemUrl = _arquivoImagem == null
           ? (_imagemController.text.trim().isNotEmpty
                 ? _imagemController.text.trim()
                 : (_imagemPreview != null ? widget.calcado?.imagemUrl : null))
-          // Sem backend, conserva a foto selecionada em memória no próprio app.
           : ApiService.modoDemo
           ? null
           : await ApiService.instance.enviarImagem(
               _imagemPreview!,
               _arquivoImagem!.name,
             );
+
+      // Monta o objeto de Calçado com todos os dados validados do formulário
       final calcado = Calcado(
         id: widget.calcado?.id,
         nome: _nomeController.text.trim(),
@@ -202,16 +251,19 @@ class _CadastroPageState extends State<CadastroPage> {
         preco: Formato.lerNumero(_precoController.text)!,
         estoque: int.parse(_estoqueController.text),
         imagemUrl: imagemUrl,
-        imagemBytes: ApiService.modoDemo ? _imagemPreview : null,
+        imagemBytes: _imagemPreview,
         tamanhos: List.of(_tamanhos),
       );
 
+      // Dispara criação ou atualização na API
       if (_editando) {
         await ApiService.instance.atualizar(calcado);
       } else {
         await ApiService.instance.criar(calcado);
       }
       if (!mounted) return;
+
+      // Fecha a tela e retorna mensagem de sucesso para a tela anterior
       Navigator.of(context).pop(
         _editando
             ? '${calcado.nome} atualizado.'
@@ -243,9 +295,11 @@ class _CadastroPageState extends State<CadastroPage> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
+                  // Seção 1: Identificação do calçado
                   _Secao(
                     titulo: 'Identificação',
                     children: [
+                      // Nome do modelo
                       TextFormField(
                         controller: _nomeController,
                         textCapitalization: TextCapitalization.words,
@@ -260,6 +314,7 @@ class _CadastroPageState extends State<CadastroPage> {
                             : null,
                       ),
                       const SizedBox(height: 16),
+                      // Marca
                       TextFormField(
                         controller: _marcaController,
                         textCapitalization: TextCapitalization.words,
@@ -274,6 +329,7 @@ class _CadastroPageState extends State<CadastroPage> {
                             : null,
                       ),
                       const SizedBox(height: 16),
+                      // Preço unitário em Reais
                       TextFormField(
                         controller: _precoController,
                         keyboardType: const TextInputType.numberWithOptions(
@@ -294,6 +350,7 @@ class _CadastroPageState extends State<CadastroPage> {
                         },
                       ),
                       const SizedBox(height: 16),
+                      // Estoque total
                       TextFormField(
                         controller: _estoqueController,
                         keyboardType: TextInputType.number,
@@ -318,6 +375,7 @@ class _CadastroPageState extends State<CadastroPage> {
                         },
                       ),
                       const SizedBox(height: 16),
+                      // Pré-visualização da imagem se houver bytes carregados
                       if (_imagemPreview != null) ...[
                         ClipRRect(
                           borderRadius: BorderRadius.circular(AppTheme.radius),
@@ -351,6 +409,7 @@ class _CadastroPageState extends State<CadastroPage> {
                           const SizedBox(height: 8),
                         ],
                       ],
+                      // Botão para selecionar foto do dispositivo
                       OutlinedButton.icon(
                         onPressed: _salvando ? null : _selecionarImagem,
                         icon: const Icon(Icons.add_photo_alternate_outlined),
@@ -360,6 +419,7 @@ class _CadastroPageState extends State<CadastroPage> {
                               : 'Trocar foto',
                         ),
                       ),
+                      // Opção para remover a foto selecionada
                       if (_imagemPreview != null)
                         TextButton.icon(
                           onPressed: _salvando
@@ -372,6 +432,7 @@ class _CadastroPageState extends State<CadastroPage> {
                           label: const Text('Remover foto selecionada'),
                         ),
                       const SizedBox(height: 12),
+                      // Campo alternativo para URL externa de imagem
                       TextFormField(
                         controller: _imagemController,
                         keyboardType: TextInputType.url,
@@ -394,10 +455,12 @@ class _CadastroPageState extends State<CadastroPage> {
                     ],
                   ),
                   const SizedBox(height: 16),
+                  // Seção 2: Características de Tipo e Forma
                   _Secao(
                     titulo: 'Características',
                     children: [
                       const _Rotulo('Tipo'),
+                      // Seletor segmentado entre Tênis e Chuteira
                       SegmentedButton<TipoCalcado>(
                         segments: [
                           for (final t in TipoCalcado.values)
@@ -412,6 +475,7 @@ class _CadastroPageState extends State<CadastroPage> {
                       ),
                       const SizedBox(height: 18),
                       const _Rotulo('Forma (largura do calçado)'),
+                      // Seletor segmentado entre Estreita, Padrão e Larga
                       SegmentedButton<FormaCalcado>(
                         segments: [
                           for (final f in FormaCalcado.values)
@@ -425,6 +489,7 @@ class _CadastroPageState extends State<CadastroPage> {
                             setState(() => _forma = s.first),
                       ),
                       const SizedBox(height: 8),
+                      // Explicação textual da forma selecionada
                       Text(
                         _forma.descricao,
                         style: TextStyle(
@@ -435,12 +500,13 @@ class _CadastroPageState extends State<CadastroPage> {
                     ],
                   ),
                   const SizedBox(height: 16),
+                  // Seção 3: Tabela de Medidas e Estoque por Tamanho
                   _Secao(
                     titulo: 'Tabela de medidas (${_tamanhos.length})',
                     children: [
                       Text(
                         'Comprimento interno de cada numeração, em centímetros. '
-                        'Toque em um tamanho para editar sua medida.',
+                        'Toque em um tamanho para editar sua medida e estoque.',
                         style: TextStyle(
                           fontSize: 13,
                           height: 1.4,
@@ -448,6 +514,7 @@ class _CadastroPageState extends State<CadastroPage> {
                         ),
                       ),
                       const SizedBox(height: 14),
+                      // Chips com os tamanhos cadastrados na grade
                       if (_tamanhos.isNotEmpty) ...[
                         Wrap(
                           spacing: 8,
@@ -474,6 +541,7 @@ class _CadastroPageState extends State<CadastroPage> {
                         ),
                         const SizedBox(height: 12),
                       ],
+                      // Aviso de erro caso a grade esteja vazia
                       if (_erroTabela != null) ...[
                         Padding(
                           padding: const EdgeInsets.only(bottom: 10),
@@ -486,10 +554,12 @@ class _CadastroPageState extends State<CadastroPage> {
                           ),
                         ),
                       ],
+                      // Botões de ação da tabela de medidas
                       Wrap(
                         spacing: 8,
                         runSpacing: 8,
                         children: [
+                          // Botão para adicionar tamanho avulso
                           OutlinedButton.icon(
                             onPressed: () => _editarOuAdicionarTamanho(),
                             style: OutlinedButton.styleFrom(
@@ -501,6 +571,7 @@ class _CadastroPageState extends State<CadastroPage> {
                             icon: const Icon(Icons.add, size: 18),
                             label: const Text('Adicionar tamanho'),
                           ),
+                          // Botão de preenchimento inteligente da grade 37–45
                           OutlinedButton.icon(
                             onPressed: _gerarGradePadrao,
                             style: OutlinedButton.styleFrom(
@@ -515,6 +586,7 @@ class _CadastroPageState extends State<CadastroPage> {
                             ),
                             label: const Text('Preencher grade 37–45'),
                           ),
+                          // Opção para limpar toda a tabela
                           if (_tamanhos.length > 1)
                             TextButton(
                               onPressed: () =>
@@ -528,11 +600,13 @@ class _CadastroPageState extends State<CadastroPage> {
                       ),
                     ],
                   ),
+                  // Faixa de erro da API
                   if (_erroApi != null) ...[
                     const SizedBox(height: 16),
                     FaixaAviso.erro(mensagem: _erroApi!),
                   ],
                   const SizedBox(height: 22),
+                  // Botão principal de salvar modelo
                   SizedBox(
                     height: 54,
                     child: ElevatedButton.icon(
@@ -569,7 +643,7 @@ class _CadastroPageState extends State<CadastroPage> {
   }
 }
 
-/// Diálogo para adicionar ou editar uma linha da tabela de medidas.
+/// Diálogo modal para adicionar ou editar uma medida de tamanho e sua quantidade em estoque
 class _DialogoTamanho extends StatefulWidget {
   final MedidaTamanho? inicial;
   const _DialogoTamanho({this.inicial});
@@ -602,6 +676,7 @@ class _DialogoTamanhoState extends State<_DialogoTamanho> {
     super.dispose();
   }
 
+  /// Confirma e valida a numeração inserida
   void _confirmar() {
     if (!(_chave.currentState?.validate() ?? false)) return;
     final qtdTexto = _estoqueTamanhoController.text.trim();
@@ -628,6 +703,7 @@ class _DialogoTamanhoState extends State<_DialogoTamanho> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
+            // Numeração
             TextFormField(
               controller: _numeracaoController,
               autofocus: true,
@@ -647,6 +723,7 @@ class _DialogoTamanhoState extends State<_DialogoTamanho> {
               },
             ),
             const SizedBox(height: 14),
+            // Comprimento interno
             TextFormField(
               controller: _comprimentoController,
               keyboardType: const TextInputType.numberWithOptions(
@@ -666,6 +743,7 @@ class _DialogoTamanhoState extends State<_DialogoTamanho> {
               },
             ),
             const SizedBox(height: 14),
+            // Estoque individual deste tamanho
             TextFormField(
               controller: _estoqueTamanhoController,
               keyboardType: TextInputType.number,
@@ -687,10 +765,12 @@ class _DialogoTamanhoState extends State<_DialogoTamanho> {
         ),
       ),
       actions: [
+        // Cancelar
         TextButton(
           onPressed: () => Navigator.of(context).pop(),
           child: Text('Cancelar', style: TextStyle(color: context.textMuted)),
         ),
+        // Confirmar (Adicionar ou Salvar)
         TextButton(
           onPressed: _confirmar,
           child: Text(
@@ -703,6 +783,7 @@ class _DialogoTamanhoState extends State<_DialogoTamanho> {
   }
 }
 
+/// Contêiner de seção estilizado com título
 class _Secao extends StatelessWidget {
   final String titulo;
   final List<Widget> children;
@@ -736,6 +817,7 @@ class _Secao extends StatelessWidget {
   }
 }
 
+/// Rótulo auxiliar para campos de formulário
 class _Rotulo extends StatelessWidget {
   final String texto;
   const _Rotulo(this.texto);

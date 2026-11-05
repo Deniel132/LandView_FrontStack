@@ -1,20 +1,33 @@
+// Importa os componentes e estilos visuais do Flutter
 import 'package:flutter/material.dart';
+// Importa o Clipboard para permitir a cópia do resultado da recomendação para a área de transferência
 import 'package:flutter/services.dart';
+// Importa o modelo do calçado
 import '../models/calcado.dart';
+// Importa o modelo de recomendação retornado pela API ou algoritmo
 import '../models/recomendacao.dart';
+// Importa o serviço de API para chamar o cálculo de provador virtual
 import '../services/api_service.dart';
+// Importa o tema e as cores do aplicativo
 import '../theme/app_theme.dart';
+// Importa formatadores de numeração e centímetros
 import '../utils/formato.dart';
+// Importa faixas visuais de erro e aviso
 import '../widgets/estados.dart';
+// Importa o botão de perfil do atendente da AppBar
 import '../widgets/logo_loja.dart';
+// Importa as tags visuais em formato de pílula
 import '../widgets/pilula.dart';
 
-/// Fluxo principal do vendedor: informa a medida do pé e a numeração que o
-/// cliente costuma usar. O cálculo é delegado ao serviço/API e o resultado
-/// é exibido junto ao comparativo na grade do calçado.
+/// Tela do Provador Virtual: permite ao vendedor inserir o comprimento do pé do cliente em centímetros
+/// e opcionalmente a numeração habitual que ele calça em outras marcas.
+/// O sistema processa a recomendação considerando o tipo (tênis/chuteira) e o formato da forma (estreita, padrão, larga),
+/// destacando visualmente o tamanho sugerido na grade do calçado.
 class RecomendacaoPage extends StatefulWidget {
+  /// Calçado sobre o qual a recomendação de tamanho será calculada
   final Calcado calcado;
 
+  /// Construtor com calçado obrigatório
   const RecomendacaoPage({super.key, required this.calcado});
 
   @override
@@ -22,29 +35,48 @@ class RecomendacaoPage extends StatefulWidget {
 }
 
 class _RecomendacaoPageState extends State<RecomendacaoPage> {
+  // Chave de controle e validação do formulário de medidas
   final _formKey = GlobalKey<FormState>();
+
+  // Controlador do campo de medida do pé em centímetros
   final _peController = TextEditingController();
+
+  // Controlador do campo opcional de numeração habitual do cliente
   final _numeracaoController = TextEditingController();
+
+  // Controlador do campo opcional da marca dessa numeração habitual
   final _marcaController = TextEditingController();
 
+  // Flag indicadora de cálculo em andamento
   bool _calculando = false;
+
+  // Mensagem de erro caso a validação ou requisição falhe
   String? _erro;
+
+  // Objeto com o resultado da recomendação retornada
   Recomendacao? _resultado;
 
   @override
   void dispose() {
+    // Libera a memória ocupada pelos controladores de texto ao fechar a tela
     _peController.dispose();
     _numeracaoController.dispose();
     _marcaController.dispose();
     super.dispose();
   }
 
-  /// Valida as medidas e pede à API Python que calcule a recomendação.
+  /// Dispara o cálculo do tamanho ideal via API ou algoritmo local
   Future<void> _calcular() async {
+    // Valida se os campos foram preenchidos corretamente
     if (!(_formKey.currentState?.validate() ?? false)) return;
+
+    // Fecha o teclado virtual
     FocusScope.of(context).unfocus();
 
+    // Obtém a marca habitual informada (opcional)
     final marca = _marcaController.text.trim();
+
+    // Atualiza o estado para exibir o indicador de progresso
     setState(() {
       _calculando = true;
       _erro = null;
@@ -52,18 +84,24 @@ class _RecomendacaoPageState extends State<RecomendacaoPage> {
     });
 
     try {
+      // Chama o endpoint de recomendação passando o ID do calçado, medida do pé e parâmetros habituais
       final r = await ApiService.instance.recomendar(
         calcadoId: widget.calcado.id!,
         medidaPeCm: Formato.lerNumero(_peController.text)!,
         numeracaoHabitual: Formato.lerNumero(_numeracaoController.text),
         marcaHabitual: marca.isEmpty ? null : marca,
       );
+
+      // Garante que o componente ainda está montado antes de atualizar a UI
       if (!mounted) return;
+
+      // Armazena o resultado obtido e encerra o loading
       setState(() {
         _resultado = r;
         _calculando = false;
       });
     } on ApiException catch (e) {
+      // Captura erros de cálculo (ex: calçado sem grade cadastrada)
       if (!mounted) return;
       setState(() {
         _erro = e.mensagem;
@@ -74,22 +112,26 @@ class _RecomendacaoPageState extends State<RecomendacaoPage> {
 
   @override
   Widget build(BuildContext context) {
+    // Calçado de referência
     final c = widget.calcado;
 
+    // Estrutura principal da página com Scaffold
     return Scaffold(
       appBar: AppBar(
         title: const Text('Provador · Recomendar tamanho'),
         actions: const [MarcaAppBar()],
       ),
       body: Center(
+        // Centraliza e limita a largura a 560px para boa leitura visual
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 560),
+          // Permite rolagem do formulário e resultados
           child: SingleChildScrollView(
             padding: const EdgeInsets.fromLTRB(16, 4, 16, 32),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                // Contexto: para qual modelo o cálculo está sendo feito.
+                // Cartão de contexto com o modelo e a forma do calçado
                 Container(
                   padding: const EdgeInsets.all(16),
                   decoration: BoxDecoration(
@@ -99,6 +141,7 @@ class _RecomendacaoPageState extends State<RecomendacaoPage> {
                   ),
                   child: Row(
                     children: [
+                      // Nome e marca do calçado
                       Expanded(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
@@ -123,6 +166,7 @@ class _RecomendacaoPageState extends State<RecomendacaoPage> {
                           ],
                         ),
                       ),
+                      // Pílula com o tipo da forma do calçado
                       Pilula(
                         texto: 'Forma ${c.forma.rotulo.toLowerCase()}',
                         destaque: true,
@@ -132,19 +176,24 @@ class _RecomendacaoPageState extends State<RecomendacaoPage> {
                 ),
                 const SizedBox(height: 16),
 
-                // Resultado: fica acima do formulário para continuar visível
-                // quando o vendedor ajusta a medida e calcula de novo.
+                // Exibe o spinner de carregamento durante o cálculo
                 if (_calculando)
                   const Padding(
                     padding: EdgeInsets.symmetric(vertical: 28),
                     child: Center(child: CircularProgressIndicator()),
                   ),
+
+                // Exibe faixa vermelha em caso de erro
                 if (_erro != null) FaixaAviso.erro(mensagem: _erro!),
+
+                // Se houver resultado calculado, exibe o painel de destaque com o número
                 if (_resultado != null)
                   _PainelResultado(calcado: c, resultado: _resultado!),
+
                 if (_resultado != null || _erro != null)
                   const SizedBox(height: 16),
 
+                // Formulário de entrada de medidas
                 Form(
                   key: _formKey,
                   child: Container(
@@ -157,6 +206,7 @@ class _RecomendacaoPageState extends State<RecomendacaoPage> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
+                        // Campo de digitação da medida do pé em centímetros
                         TextFormField(
                           controller: _peController,
                           keyboardType: const TextInputType.numberWithOptions(
@@ -169,6 +219,7 @@ class _RecomendacaoPageState extends State<RecomendacaoPage> {
                             suffixText: 'cm',
                             prefixIcon: Icon(Icons.straighten_rounded),
                           ),
+                          // Validação da medida do pé (espera entre 15 e 35 cm)
                           validator: (v) {
                             final n = Formato.lerNumero(v ?? '');
                             if (n == null) {
@@ -181,6 +232,7 @@ class _RecomendacaoPageState extends State<RecomendacaoPage> {
                           },
                         ),
                         const SizedBox(height: 10),
+                        // Chips de atalho rápido com medidas frequentes de pés
                         Wrap(
                           spacing: 6,
                           runSpacing: 6,
@@ -203,6 +255,7 @@ class _RecomendacaoPageState extends State<RecomendacaoPage> {
                           ],
                         ),
                         const SizedBox(height: 16),
+                        // Campo opcional da numeração que o cliente costuma calçar
                         TextFormField(
                           controller: _numeracaoController,
                           keyboardType: const TextInputType.numberWithOptions(
@@ -216,6 +269,7 @@ class _RecomendacaoPageState extends State<RecomendacaoPage> {
                               Icons.confirmation_number_outlined,
                             ),
                           ),
+                          // Validação da numeração habitual
                           validator: (v) {
                             if (v == null || v.trim().isEmpty) return null;
                             final n = Formato.lerNumero(v);
@@ -226,6 +280,7 @@ class _RecomendacaoPageState extends State<RecomendacaoPage> {
                           },
                         ),
                         const SizedBox(height: 16),
+                        // Campo opcional da marca habitual
                         TextFormField(
                           controller: _marcaController,
                           textCapitalization: TextCapitalization.words,
@@ -242,6 +297,7 @@ class _RecomendacaoPageState extends State<RecomendacaoPage> {
                   ),
                 ),
                 const SizedBox(height: 20),
+                // Botão de ação para calcular tamanho ideal
                 SizedBox(
                   height: 54,
                   child: ElevatedButton.icon(
@@ -270,7 +326,7 @@ class _RecomendacaoPageState extends State<RecomendacaoPage> {
   }
 }
 
-/// Painel escuro com o número recomendado em destaque e comparativo na grade.
+/// Painel escuro elegante com o tamanho sugerido em tipografia grande e posição na grade de medidas
 class _PainelResultado extends StatelessWidget {
   final Calcado calcado;
   final Recomendacao resultado;
@@ -289,12 +345,14 @@ class _PainelResultado extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          // Linha decorativa azul no topo do painel
           Container(height: 3, color: AppColors.brand),
           Padding(
             padding: const EdgeInsets.fromLTRB(22, 20, 22, 20),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                // Legenda de identificação
                 Text(
                   'Tamanho recomendado',
                   style: TextStyle(
@@ -303,6 +361,7 @@ class _PainelResultado extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: 4),
+                // Numeração calculada em destaque gigante de 56px
                 Text(
                   Formato.numeracao(resultado.tamanho),
                   style: const TextStyle(
@@ -314,6 +373,7 @@ class _PainelResultado extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: 4),
+                // Nome do calçado associado à recomendação
                 Text(
                   'para ${calcado.nome}',
                   style: TextStyle(
@@ -321,6 +381,7 @@ class _PainelResultado extends StatelessWidget {
                     color: Colors.white.withValues(alpha: 0.6),
                   ),
                 ),
+                // Pílulas com alternativa de numeração e folga real
                 if (resultado.alternativa != null ||
                     resultado.folgaCm != null) ...[
                   const SizedBox(height: 14),
@@ -340,6 +401,7 @@ class _PainelResultado extends StatelessWidget {
                     ],
                   ),
                 ],
+                // Observação técnica detalhando a recomendação
                 if (resultado.observacao.isNotEmpty) ...[
                   const SizedBox(height: 14),
                   Text(
@@ -351,6 +413,7 @@ class _PainelResultado extends StatelessWidget {
                     ),
                   ),
                 ],
+                // Grade completa destacando onde a numeração recomendada se posiciona
                 if (calcado.tamanhos.isNotEmpty) ...[
                   const SizedBox(height: 18),
                   Text(
@@ -376,6 +439,7 @@ class _PainelResultado extends StatelessWidget {
                   ),
                 ],
                 const SizedBox(height: 18),
+                // Botão de cópia rápida para o vendedor enviar ao cliente pelo WhatsApp
                 SizedBox(
                   width: double.infinity,
                   child: OutlinedButton.icon(
@@ -386,6 +450,7 @@ class _PainelResultado extends StatelessWidget {
                       ),
                     ),
                     onPressed: () async {
+                      // Monta a mensagem formatada para WhatsApp com negritos
                       final texto = StringBuffer()
                         ..writeln('📏 *Recomendação do Provador LandView*')
                         ..writeln('• Modelo: *${calcado.nome}* (${calcado.marca})')
@@ -403,10 +468,12 @@ class _PainelResultado extends StatelessWidget {
                       texto.writeln(
                         '• Valor: ${Formato.real(calcado.preco)} (ou ${Formato.real(calcado.preco * 0.95)} no PIX)',
                       );
+                      // Copia o texto para a área de transferência do celular ou computador
                       await Clipboard.setData(
                         ClipboardData(text: texto.toString().trim()),
                       );
                       if (!context.mounted) return;
+                      // Notifica o vendedor na tela
                       ScaffoldMessenger.of(context)
                         ..hideCurrentSnackBar()
                         ..showSnackBar(
@@ -430,6 +497,7 @@ class _PainelResultado extends StatelessWidget {
   }
 }
 
+/// Chip individual na grade de medidas do resultado destacando a numeração recomendada
 class _ChipGradeResultado extends StatelessWidget {
   final MedidaTamanho medida;
   final bool recomendado;
@@ -443,11 +511,14 @@ class _ChipGradeResultado extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Cor de fundo do chip (azul se recomendado, translúcido se alternativo ou padrão)
     final corFundo = recomendado
         ? AppColors.brand
         : alternativa
         ? Colors.white.withValues(alpha: 0.14)
         : Colors.white.withValues(alpha: 0.04);
+
+    // Cor da borda
     final corBorda = recomendado
         ? AppColors.brandLight
         : alternativa
@@ -464,6 +535,7 @@ class _ChipGradeResultado extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
+          // Numeração
           Text(
             Formato.numeracao(medida.numeracao),
             style: TextStyle(
@@ -474,6 +546,7 @@ class _ChipGradeResultado extends StatelessWidget {
                   : Colors.white.withValues(alpha: 0.65),
             ),
           ),
+          // Comprimento da palmilha em cm
           Text(
             Formato.cm(medida.comprimentoCm),
             style: TextStyle(
@@ -489,6 +562,7 @@ class _ChipGradeResultado extends StatelessWidget {
   }
 }
 
+/// Etiqueta translúcida clara para fundo escuro do painel de resultado
 class _PilulaClara extends StatelessWidget {
   final String texto;
   const _PilulaClara({required this.texto});
