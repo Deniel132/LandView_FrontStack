@@ -1,17 +1,32 @@
+// Importa os componentes e estilos visuais do Flutter
 import 'package:flutter/material.dart';
+// Importa o aplicativo principal para alternar tema
 import '../main.dart';
+// Importa o modelo de calçado
 import '../models/calcado.dart';
+// Importa o cliente de API para requisições de listagem
 import '../services/api_service.dart';
+// Importa o serviço de sessão para controle de perfis de usuário
+import '../services/sessao.dart';
+// Importa o tema e cores do aplicativo
 import '../theme/app_theme.dart';
+// Importa utilitários de formatação de moeda e números
 import '../utils/formato.dart';
+// Importa o cartão visual de calçado
 import '../widgets/cartao_calcado.dart';
+// Importa os componentes de estado vazio e erro
 import '../widgets/estados.dart';
+// Importa o botão de perfil de usuário na AppBar
 import '../widgets/logo_loja.dart';
+// Importa a tela de cadastro para criação de modelos
 import 'cadastro_page.dart';
+// Importa a tela de detalhes do calçado
 import 'detalhe_page.dart';
 
+/// Enum local para o status visual da conexão com a API
 enum _StatusApi { conectando, online, offline, demonstracao }
 
+/// Opções de filtro por situação de estoque
 enum _FiltroEstoque {
   todos('Todos'),
   baixo('Estoque baixo'),
@@ -22,6 +37,7 @@ enum _FiltroEstoque {
   const _FiltroEstoque(this.rotulo);
 }
 
+/// Opções de ordenação do catálogo
 enum _Ordenacao {
   padrao('Relevância'),
   nomeAz('Nome (A–Z)'),
@@ -34,7 +50,11 @@ enum _Ordenacao {
   const _Ordenacao(this.rotulo);
 }
 
+/// Tela de Catálogo Geral e Estoque: permite buscar por modelo ou marca, filtrar por tipo esportivo
+/// (Tênis/Chuteira) e por situação de estoque (baixo, esgotado, excesso), ordenar por preço/estoque/nome,
+/// visualizar métricas gerais de unidades e valor imobilizado e navegar para o detalhe ou cadastro.
 class CatalogoPage extends StatefulWidget {
+  // Construtor constante da página de catálogo
   const CatalogoPage({super.key});
 
   @override
@@ -42,34 +62,50 @@ class CatalogoPage extends StatefulWidget {
 }
 
 class _CatalogoPageState extends State<CatalogoPage> {
+  // Lista em memória com todos os calçados retornados pelo backend
   List<Calcado> _calcados = [];
+
+  // Flag que controla a exibição do spinner de carregamento inicial
   bool _carregando = true;
+
+  // Mensagem de erro caso a requisição falhe
   String? _erro;
 
+  // Filtro selecionado por tipo esportivo (Tênis, Chuteiras ou Todos)
   TipoCalcado? _filtroTipo;
+
+  // Filtro selecionado por situação de estoque
   _FiltroEstoque _filtroEstoque = _FiltroEstoque.todos;
+
+  // Critério de ordenação selecionado
   _Ordenacao _ordenacao = _Ordenacao.padrao;
+
+  // Termo digitado na barra de pesquisa
   String _busca = '';
+
+  // Controlador de texto do campo de busca
   final _buscaController = TextEditingController();
 
   @override
   void initState() {
     super.initState();
+    // Dispara a requisição de busca de calçados ao entrar na tela
     _carregar();
   }
 
   @override
   void dispose() {
+    // Libera a memória do controlador de busca
     _buscaController.dispose();
     super.dispose();
   }
 
-  /// Busca a lista na API. A API é a fonte da verdade: o app não guarda
-  /// nada localmente, então alterações feitas pela interface Python
-  /// aparecem aqui assim que a lista é recarregada.
+  /// Busca a lista atualizada de calçados na API (fonte da verdade)
   Future<void> _carregar({bool silencioso = false}) async {
+    // Se não for atualização em background, exibe loading visual
     if (!silencioso) setState(() => _carregando = true);
     try {
+      // Dispara a requisição para listar calçados
       final lista = await ApiService.instance.listar();
       if (!mounted) return;
       setState(() {
@@ -86,20 +122,23 @@ class _CatalogoPageState extends State<CatalogoPage> {
     }
   }
 
+  /// Retorna o status de conexão atual
   _StatusApi get _status {
     if (ApiService.modoDemo) return _StatusApi.demonstracao;
     if (_carregando) return _StatusApi.conectando;
     return _erro == null ? _StatusApi.online : _StatusApi.offline;
   }
 
-  /// Busca e filtros só fazem sentido quando existe lista para filtrar.
+  /// Indica se existem calçados carregados na lista
   bool get _temDados => !_carregando && _erro == null && _calcados.isNotEmpty;
 
+  /// Indica se há algum filtro ou busca ativa no momento
   bool get _temFiltroAtivo =>
       _filtroTipo != null ||
       _filtroEstoque != _FiltroEstoque.todos ||
       _busca.trim().isNotEmpty;
 
+  /// Limpa todos os filtros e a barra de pesquisa
   void _limparFiltros() {
     _buscaController.clear();
     setState(() {
@@ -110,10 +149,16 @@ class _CatalogoPageState extends State<CatalogoPage> {
     });
   }
 
+  /// Retorna os calçados que atendem aos filtros de busca, categoria e estoque, já ordenados
   List<Calcado> get _visiveis {
     final termo = _busca.trim().toLowerCase();
+
+    // Filtra a lista de calçados
     final filtrados = _calcados.where((c) {
+      // Filtra por tipo esportivo
       if (_filtroTipo != null && c.tipo != _filtroTipo) return false;
+
+      // Filtra por situação de estoque
       switch (_filtroEstoque) {
         case _FiltroEstoque.todos:
           break;
@@ -124,11 +169,14 @@ class _CatalogoPageState extends State<CatalogoPage> {
         case _FiltroEstoque.excesso:
           if (!c.estoqueAlto) return false;
       }
+
+      // Filtra por nome do modelo ou nome da marca
       return termo.isEmpty ||
           c.nome.toLowerCase().contains(termo) ||
           c.marca.toLowerCase().contains(termo);
     }).toList();
 
+    // Aplica a ordenação selecionada
     switch (_ordenacao) {
       case _Ordenacao.padrao:
         break;
@@ -148,6 +196,7 @@ class _CatalogoPageState extends State<CatalogoPage> {
     return filtrados;
   }
 
+  /// Exibe um aviso temporário (SnackBar) na tela
   void _avisar(String mensagem) {
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
@@ -156,14 +205,14 @@ class _CatalogoPageState extends State<CatalogoPage> {
       );
   }
 
-  /// Depois de qualquer tela filha, recarrega a lista: outra pessoa pode
-  /// ter alterado os dados enquanto o vendedor estava na tela de detalhe.
+  /// Ação disparada ao retornar de uma tela filha (recarrega os calçados)
   Future<void> _aposVoltar(String? mensagem) async {
     if (!mounted) return;
     if (mensagem != null) _avisar(mensagem);
     await _carregar(silencioso: true);
   }
 
+  /// Abre a tela de detalhes do calçado
   Future<void> _abrirDetalhe(Calcado calcado) async {
     final resultado = await Navigator.of(context).push<String>(
       MaterialPageRoute(builder: (_) => DetalhePage(calcado: calcado)),
@@ -171,6 +220,7 @@ class _CatalogoPageState extends State<CatalogoPage> {
     await _aposVoltar(resultado);
   }
 
+  /// Abre a tela de cadastro para inclusão de novo produto
   Future<void> _abrirCadastro() async {
     final resultado = await Navigator.of(
       context,
@@ -181,9 +231,13 @@ class _CatalogoPageState extends State<CatalogoPage> {
   @override
   Widget build(BuildContext context) {
     final isDark = context.isDark;
+    // Identifica se a altura disponível é compacta (telas baixas)
     final compacto = MediaQuery.sizeOf(context).height < 520;
 
+    // Calcula a soma total de unidades de todos os calçados
     final totalUnidades = _calcados.fold<int>(0, (s, c) => s + c.estoque);
+
+    // Calcula o valor monetário imobilizado total em estoque
     final valorTotalEstoque = _calcados.fold<double>(
       0,
       (s, c) => s + c.valorTotalEstoque,
@@ -212,11 +266,13 @@ class _CatalogoPageState extends State<CatalogoPage> {
           ],
         ),
         actions: [
+          // Botão para atualizar a listagem
           IconButton(
             icon: const Icon(Icons.refresh_rounded, size: 22),
             tooltip: 'Atualizar lista',
             onPressed: _carregando ? null : () => _carregar(),
           ),
+          // Botão para alternar tema
           IconButton(
             icon: Icon(
               isDark ? Icons.light_mode_outlined : Icons.dark_mode_outlined,
@@ -229,6 +285,7 @@ class _CatalogoPageState extends State<CatalogoPage> {
                   : ThemeMode.dark;
             },
           ),
+          // Botão de perfil do usuário
           const MarcaAppBar(),
         ],
         bottom: PreferredSize(
@@ -242,6 +299,7 @@ class _CatalogoPageState extends State<CatalogoPage> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
+              // Painel superior com estatísticas resumidas
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
                 child: _PainelCatalogo(
@@ -258,6 +316,7 @@ class _CatalogoPageState extends State<CatalogoPage> {
                   compacto: compacto,
                 ),
               ),
+              // Campo de busca e menu de ordenação
               if (_temDados) ...[
                 Padding(
                   padding: EdgeInsets.fromLTRB(
@@ -268,6 +327,7 @@ class _CatalogoPageState extends State<CatalogoPage> {
                   ),
                   child: Row(
                     children: [
+                      // Barra de pesquisa
                       Expanded(
                         child: TextField(
                           controller: _buscaController,
@@ -289,6 +349,7 @@ class _CatalogoPageState extends State<CatalogoPage> {
                         ),
                       ),
                       const SizedBox(width: 8),
+                      // Menu de seleção do critério de ordenação
                       PopupMenuButton<_Ordenacao>(
                         tooltip: 'Ordenar catálogo',
                         initialValue: _ordenacao,
@@ -363,6 +424,7 @@ class _CatalogoPageState extends State<CatalogoPage> {
                     ],
                   ),
                 ),
+                // Linha rolável com filtros de tipo e filtros de situação de estoque
                 SizedBox(
                   height: compacto ? 36 : 40,
                   child: ListView(
@@ -387,22 +449,27 @@ class _CatalogoPageState extends State<CatalogoPage> {
                 ),
                 SizedBox(height: compacto ? 4 : 10),
               ],
+              // Lista de resultados
               Expanded(child: _conteudo()),
             ],
           ),
         ),
       ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: _abrirCadastro,
-        icon: const Icon(Icons.add, size: 20),
-        label: const Text(
-          'Novo modelo',
-          style: TextStyle(fontWeight: FontWeight.w600),
-        ),
-      ),
+      // Botão flutuante para adicionar novo calçado (disponível somente para Dono/Gerente)
+      floatingActionButton: (Sessao.instance.usuario?.podeGerenciarProdutos ?? false)
+          ? FloatingActionButton.extended(
+              onPressed: _abrirCadastro,
+              icon: const Icon(Icons.add, size: 20),
+              label: const Text(
+                'Novo modelo',
+                style: TextStyle(fontWeight: FontWeight.w600),
+              ),
+            )
+          : null,
     );
   }
 
+  /// Chip individual para filtrar por categoria esportiva
   Widget _chipTipo(String rotulo, TipoCalcado? tipo) {
     return Padding(
       padding: const EdgeInsets.only(right: 8),
@@ -417,6 +484,7 @@ class _CatalogoPageState extends State<CatalogoPage> {
     );
   }
 
+  /// Chip individual para filtrar por condição de estoque
   Widget _chipEstoque(_FiltroEstoque filtro) {
     final selecionado = _filtroEstoque == filtro;
     return Padding(
@@ -434,6 +502,7 @@ class _CatalogoPageState extends State<CatalogoPage> {
     );
   }
 
+  /// Constrói o corpo da página dependendo do estado da lista
   Widget _conteudo() {
     if (_carregando) return const Center(child: CircularProgressIndicator());
     if (_erro != null) {
@@ -465,6 +534,7 @@ class _CatalogoPageState extends State<CatalogoPage> {
       );
     }
 
+    // Lista rolável de calçados
     return RefreshIndicator(
       onRefresh: () => _carregar(silencioso: true),
       child: ListView.builder(
@@ -480,7 +550,7 @@ class _CatalogoPageState extends State<CatalogoPage> {
   }
 }
 
-/// Painel escuro com a contagem do catálogo, estoque total e estado da conexão.
+/// Painel escuro do topo com indicadores de catálogo, unidades totais e valor de estoque
 class _PainelCatalogo extends StatelessWidget {
   final int total;
   final int tenis;
@@ -502,6 +572,7 @@ class _PainelCatalogo extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Configura o indicador de status
     final (Color corStatus, String textoStatus) = switch (status) {
       _StatusApi.conectando => (AppColors.hazard, 'Conectando…'),
       _StatusApi.online => (AppColors.brandLight, 'API conectada'),
@@ -674,6 +745,7 @@ class _PainelCatalogo extends StatelessWidget {
   }
 }
 
+/// Linha divisória vertical
 class _DivisorVertical extends StatelessWidget {
   const _DivisorVertical();
 
@@ -687,6 +759,7 @@ class _DivisorVertical extends StatelessWidget {
   }
 }
 
+/// Bloco de leitura de métrica
 class _Leitura extends StatelessWidget {
   final String rotulo;
   final String valor;

@@ -1,19 +1,36 @@
+// Importa utilitário de conversão para decodificar imagens em base64 com segurança
+import 'dart:convert';
+// Importa os componentes gráficos do Flutter
 import 'package:flutter/material.dart';
+// Importa o Clipboard para permitir a cópia da ficha de estoque do calçado
 import 'package:flutter/services.dart';
+// Importa o modelo de calçado e medidas de tamanho
 import '../models/calcado.dart';
+// Importa o cliente de API para registrar vendas, atualizar estoque e excluir
 import '../services/api_service.dart';
+// Importa o gerenciador da sessão e permissões do usuário logado
+import '../services/sessao.dart';
+// Importa o tema e cores do aplicativo
 import '../theme/app_theme.dart';
+// Importa utilitários de formatação de moeda, numerações e centímetros
 import '../utils/formato.dart';
+// Importa o botão de perfil de usuário na AppBar
 import '../widgets/logo_loja.dart';
+// Importa as tags em formato de pílula
 import '../widgets/pilula.dart';
+// Importa a tela de formulário para edição do modelo
 import 'cadastro_page.dart';
+// Importa a tela do provador virtual
 import 'recomendacao_page.dart';
 
-/// Exibe os dados de um calçado e oferece ações de venda/baixa, reposição por
-/// tamanho ou total, recomendação, edição e exclusão.
+/// Tela de Detalhes do Calçado: apresenta a foto em tamanho ampliado, características completas,
+/// ficha técnica de estoque e valor total imobilizado, grade de medidas interativa (com ajuste rápido por tamanho),
+/// registro de vendas com baixa de estoque, recomendação do provador virtual, edição e exclusão.
 class DetalhePage extends StatefulWidget {
+  /// Calçado exibido na tela
   final Calcado calcado;
 
+  /// Construtor com calçado obrigatório
   const DetalhePage({super.key, required this.calcado});
 
   @override
@@ -21,24 +38,32 @@ class DetalhePage extends StatefulWidget {
 }
 
 class _DetalhePageState extends State<DetalhePage> {
+  // Flag que indica se alguma operação assíncrona está em andamento (venda, ajuste ou exclusão)
   bool _ocupado = false;
+
+  // Estado mutável local do calçado para atualização imediata após vendas e ajustes de estoque
   late Calcado _calcado;
 
+  // Getter auxiliar de conveniência
   Calcado get _c => _calcado;
 
   @override
   void initState() {
     super.initState();
+    // Inicializa o estado com o calçado passado por parâmetro
     _calcado = widget.calcado;
   }
 
+  /// Navega para a tela do provador virtual passando o calçado atual
   void _recomendar() {
     Navigator.of(
       context,
     ).push(MaterialPageRoute(builder: (_) => RecomendacaoPage(calcado: _c)));
   }
 
+  /// Abre o modal interativo para registrar uma venda com seleção de tamanho e quantidade
   Future<void> _registrarVenda() async {
+    // Se o estoque estiver zerado, não permite registrar venda
     if (_c.estoque == 0) return;
     final calcadoId = _c.id;
     if (calcadoId == null) {
@@ -49,6 +74,8 @@ class _DetalhePageState extends State<DetalhePage> {
       );
       return;
     }
+
+    // Exibe o diálogo de venda modal
     final resultado = await showDialog<_ResultadoVenda>(
       context: context,
       builder: (_) => _DialogoVenda(calcado: _c),
@@ -60,25 +87,36 @@ class _DetalhePageState extends State<DetalhePage> {
 
     setState(() => _ocupado = true);
     try {
+      // Dispara o registro da venda via API (baixa o estoque e cria a saída de auditoria)
       final venda = await ApiService.instance.registrarVenda(
         calcadoId: calcadoId,
         quantidade: quantidade,
       );
+
+      // Desconta a quantidade vendida na numeração específica escolhida
       final aposDesconto = _c
           .descontarDoTamanho(numeracao, quantidade)
           .copyWith(estoque: venda.estoqueAtual);
 
-      // Sincroniza a grade atualizada por tamanho no banco/memória.
-      Calcado atualizadoFinal = aposDesconto;
+      // Salva a nova grade detalhada no armazenamento local garantindo persistência imediata (fora do modo demo)
+      if (!ApiService.modoDemo) {
+        // Grava no SharedPreferences
+        await Sessao.salvarGradeTamanhos(calcadoId, aposDesconto.tamanhos);
+      }
+
+      // Sincroniza a nova quantidade total no backend
       try {
-        atualizadoFinal = await ApiService.instance.atualizar(aposDesconto);
+        await ApiService.instance.atualizar(aposDesconto);
       } catch (_) {}
 
       if (!mounted) return;
       setState(() {
-        _calcado = atualizadoFinal.copyWith(estoque: venda.estoqueAtual);
+        // Atualiza a tela mantendo exatamente o desconto aplicado na numeração vendida
+        _calcado = aposDesconto;
         _ocupado = false;
       });
+
+      // Exibe notificação de confirmação com resumo da venda e valor monetário total
       final totalVenda = Formato.real(_c.preco * quantidade);
       final infoTam = numeracao != null
           ? ' (Tam. ${Formato.numeracao(numeracao)})'
@@ -101,6 +139,7 @@ class _DetalhePageState extends State<DetalhePage> {
     }
   }
 
+  /// Abre o diálogo para alterar o estoque total do modelo
   Future<void> _ajustarEstoque() async {
     if (_c.id == null) return;
     final novoEstoque = await showDialog<int>(
@@ -111,13 +150,21 @@ class _DetalhePageState extends State<DetalhePage> {
 
     setState(() => _ocupado = true);
     try {
+      // Distribui o novo estoque total proporcionalmente na grade de tamanhos
       final gradeAjustada = _c.copyWith(estoque: novoEstoque).tamanhosComEstoque;
-      final atualizado = await ApiService.instance.atualizar(
-        _c.copyWith(estoque: novoEstoque, tamanhos: gradeAjustada),
-      );
+      // Cria a nova instância com o estoque ajustado e a grade equilibrada
+      final calcadoNovo = _c.copyWith(estoque: novoEstoque, tamanhos: gradeAjustada);
+      // Salva a nova grade de tamanhos no armazenamento local (fora do modo demonstração)
+      if (!ApiService.modoDemo) {
+        // Grava no SharedPreferences
+        await Sessao.salvarGradeTamanhos(_c.id!, gradeAjustada);
+      }
+      // Sincroniza a alteração de estoque no backend
+      final atualizado = await ApiService.instance.atualizar(calcadoNovo);
       if (!mounted) return;
       setState(() {
-        _calcado = atualizado;
+        // Atualiza a tela mantendo a grade equilibrada
+        _calcado = calcadoNovo.copyWith(estoque: atualizado.estoque);
         _ocupado = false;
       });
       ScaffoldMessenger.of(context)
@@ -138,7 +185,7 @@ class _DetalhePageState extends State<DetalhePage> {
     }
   }
 
-  /// Ajusta o estoque de uma numeração específica ao tocar no card do tamanho.
+  /// Ajusta o estoque de uma numeração específica ao tocar no cartão do tamanho
   Future<void> _ajustarEstoqueTamanho(MedidaTamanho medida) async {
     if (_c.id == null || _ocupado) return;
     final qtdAtual = medida.estoque ?? 0;
@@ -153,15 +200,22 @@ class _DetalhePageState extends State<DetalhePage> {
 
     setState(() => _ocupado = true);
     try {
+      // Atualiza apenas a numeração clicada e recalcula a soma total
       final calcadoNovo = _c.atualizarEstoqueDoTamanho(
         medida.numeracao,
         novaQtd,
       );
+      // Salva a nova grade de tamanhos no armazenamento local (fora do modo demonstração)
+      if (!ApiService.modoDemo) {
+        // Grava no SharedPreferences
+        await Sessao.salvarGradeTamanhos(_c.id!, calcadoNovo.tamanhos);
+      }
+      // Sincroniza a atualização no backend
       final atualizado = await ApiService.instance.atualizar(calcadoNovo);
       if (!mounted) return;
       setState(() {
-        _calcado = atualizado.copyWith(
-          estoque: calcadoNovo.estoque,
+        _calcado = calcadoNovo.copyWith(
+          estoque: atualizado.estoque,
           tamanhos: calcadoNovo.tamanhos,
         );
         _ocupado = false;
@@ -184,8 +238,7 @@ class _DetalhePageState extends State<DetalhePage> {
     }
   }
 
-  /// A tela de edição devolve uma mensagem; repassamos para a tela anterior,
-  /// que recarrega a lista a partir da API.
+  /// Abre a tela de edição do calçado
   Future<void> _editar() async {
     final resultado = await Navigator.of(context).push<String>(
       MaterialPageRoute(builder: (_) => CadastroPage(calcado: _c)),
@@ -193,7 +246,7 @@ class _DetalhePageState extends State<DetalhePage> {
     if (resultado != null && mounted) Navigator.of(context).pop(resultado);
   }
 
-  /// Pede confirmação antes de remover o modelo do catálogo pela API.
+  /// Pede confirmação e exclui o calçado da API
   Future<void> _excluir() async {
     final confirmou = await showDialog<bool>(
       context: context,
@@ -240,6 +293,7 @@ class _DetalhePageState extends State<DetalhePage> {
     }
   }
 
+  /// Copia um relatório resumido da grade e situação do estoque para a área de transferência
   Future<void> _copiarFichaEstoque() async {
     final grade = _c.tamanhosComEstoque;
     final zerados = _c.tamanhosZerados
@@ -269,6 +323,7 @@ class _DetalhePageState extends State<DetalhePage> {
       );
   }
 
+  /// Retorna a pílula colorida correspondente à situação de estoque do calçado
   Widget _pilulaStatusEstoque(BuildContext context) {
     if (_c.esgotado) {
       return const Pilula(
@@ -294,21 +349,26 @@ class _DetalhePageState extends State<DetalhePage> {
   Widget build(BuildContext context) {
     final gradeComEstoque = _c.tamanhosComEstoque;
     final zerados = _c.tamanhosZerados;
+    final podeGerenciar = Sessao.instance.usuario?.podeGerenciarProdutos ?? false;
 
     return Scaffold(
       appBar: AppBar(
         title: const Text('Detalhes do modelo'),
         actions: [
+          // Botão para copiar ficha técnica de estoque
           IconButton(
             icon: const Icon(Icons.content_copy_rounded, size: 20),
             tooltip: 'Copiar ficha de estoque',
             onPressed: _ocupado ? null : _copiarFichaEstoque,
           ),
-          IconButton(
-            icon: const Icon(Icons.edit_outlined, size: 21),
-            tooltip: 'Editar modelo',
-            onPressed: _ocupado ? null : _editar,
-          ),
+          // Botão para editar o calçado (disponível apenas para Dono/Gerente)
+          if (Sessao.instance.usuario?.podeGerenciarProdutos ?? false)
+            IconButton(
+              icon: const Icon(Icons.edit_outlined, size: 21),
+              tooltip: 'Editar modelo',
+              onPressed: _ocupado ? null : _editar,
+            ),
+          // Botão de perfil do usuário
           const MarcaAppBar(),
         ],
       ),
@@ -320,8 +380,10 @@ class _DetalhePageState extends State<DetalhePage> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
+                // Imagem ampliada do calçado
                 _Imagem(calcado: _c),
                 const SizedBox(height: 20),
+                // Tags com Tipo, Forma e Status de Estoque
                 Wrap(
                   spacing: 6,
                   runSpacing: 4,
@@ -332,6 +394,7 @@ class _DetalhePageState extends State<DetalhePage> {
                   ],
                 ),
                 const SizedBox(height: 10),
+                // Nome do calçado em destaque grande
                 Text(
                   _c.nome,
                   style: TextStyle(
@@ -343,11 +406,13 @@ class _DetalhePageState extends State<DetalhePage> {
                   ),
                 ),
                 const SizedBox(height: 4),
+                // Marca
                 Text(
                   _c.marca,
                   style: TextStyle(fontSize: 15, color: context.textMuted),
                 ),
                 const SizedBox(height: 18),
+                // Cartão com a ficha técnica de preços e estoque
                 Container(
                   decoration: BoxDecoration(
                     color: context.cardSurface,
@@ -390,6 +455,7 @@ class _DetalhePageState extends State<DetalhePage> {
                   ),
                 ),
                 const SizedBox(height: 20),
+                // Cabeçalho da grade de tamanhos
                 Wrap(
                   alignment: WrapAlignment.spaceBetween,
                   crossAxisAlignment: WrapCrossAlignment.center,
@@ -405,16 +471,17 @@ class _DetalhePageState extends State<DetalhePage> {
                       ),
                     ),
                     Text(
-                      'Toque no tamanho p/ ajustar',
+                      podeGerenciar ? 'Toque no tamanho p/ ajustar' : 'Grade para venda',
                       style: TextStyle(
                         fontSize: 11.5,
-                        color: context.accent,
+                        color: podeGerenciar ? context.accent : context.textMuted,
                         fontWeight: FontWeight.w600,
                       ),
                     ),
                   ],
                 ),
                 const SizedBox(height: 10),
+                // Exibe os cartões de cada tamanho com suas medidas e quantidades
                 if (gradeComEstoque.isEmpty)
                   Text(
                     'Este modelo ainda não tem tabela de medidas.',
@@ -428,11 +495,12 @@ class _DetalhePageState extends State<DetalhePage> {
                       for (final t in gradeComEstoque)
                         _TileMedida(
                           medida: t,
-                          onTap: () => _ajustarEstoqueTamanho(t),
+                          onTap: podeGerenciar ? () => _ajustarEstoqueTamanho(t) : null,
                         ),
                     ],
                   ),
                 const SizedBox(height: 26),
+                // Botão principal: Registrar Venda
                 SizedBox(
                   height: 54,
                   child: ElevatedButton.icon(
@@ -457,6 +525,7 @@ class _DetalhePageState extends State<DetalhePage> {
                   ),
                 ),
                 const SizedBox(height: 10),
+                // Botão secundário: Recomendar tamanho (Provador)
                 SizedBox(
                   height: 52,
                   child: OutlinedButton.icon(
@@ -465,56 +534,61 @@ class _DetalhePageState extends State<DetalhePage> {
                     label: const Text('Recomendar tamanho (Provador)'),
                   ),
                 ),
-                const SizedBox(height: 10),
-                Row(
-                  children: [
-                    Expanded(
-                      child: SizedBox(
-                        height: 52,
-                        child: OutlinedButton.icon(
-                          onPressed: _ocupado ? null : _ajustarEstoque,
-                          icon: const Icon(
-                            Icons.inventory_2_outlined,
-                            size: 19,
+                // Ações administrativas: Ajustar Estoque, Editar Modelo e Excluir (somente para Dono/Gerente)
+                if (podeGerenciar) ...[
+                  const SizedBox(height: 10),
+                  // Linha com Ajustar Estoque e Editar Modelo
+                  Row(
+                    children: [
+                      Expanded(
+                        child: SizedBox(
+                          height: 52,
+                          child: OutlinedButton.icon(
+                            onPressed: _ocupado ? null : _ajustarEstoque,
+                            icon: const Icon(
+                              Icons.inventory_2_outlined,
+                              size: 19,
+                            ),
+                            label: const Text('Ajustar estoque'),
                           ),
-                          label: const Text('Ajustar estoque'),
                         ),
                       ),
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: SizedBox(
-                        height: 52,
-                        child: OutlinedButton.icon(
-                          onPressed: _ocupado ? null : _editar,
-                          icon: const Icon(Icons.edit_outlined, size: 19),
-                          label: const Text('Editar modelo'),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: SizedBox(
+                          height: 52,
+                          child: OutlinedButton.icon(
+                            onPressed: _ocupado ? null : _editar,
+                            icon: const Icon(Icons.edit_outlined, size: 19),
+                            label: const Text('Editar modelo'),
+                          ),
                         ),
                       ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 10),
-                SizedBox(
-                  height: 52,
-                  child: OutlinedButton.icon(
-                    onPressed: _ocupado ? null : _excluir,
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: AppColors.danger,
-                      side: BorderSide(
-                        color: AppColors.danger.withValues(alpha: 0.4),
-                      ),
-                    ),
-                    icon: _ocupado
-                        ? const SizedBox(
-                            width: 16,
-                            height: 16,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : const Icon(Icons.delete_outline, size: 19),
-                    label: Text(_ocupado ? 'Excluindo...' : 'Excluir modelo'),
+                    ],
                   ),
-                ),
+                  const SizedBox(height: 10),
+                  // Botão vermelho de excluir modelo
+                  SizedBox(
+                    height: 52,
+                    child: OutlinedButton.icon(
+                      onPressed: _ocupado ? null : _excluir,
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: AppColors.danger,
+                        side: BorderSide(
+                          color: AppColors.danger.withValues(alpha: 0.4),
+                        ),
+                      ),
+                      icon: _ocupado
+                          ? const SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.delete_outline, size: 19),
+                      label: Text(_ocupado ? 'Excluindo...' : 'Excluir modelo'),
+                    ),
+                  ),
+                ],
               ],
             ),
           ),
@@ -524,6 +598,7 @@ class _DetalhePageState extends State<DetalhePage> {
   }
 }
 
+/// Dados retornados pelo diálogo de confirmação de venda
 class _ResultadoVenda {
   final int quantidade;
   final double? numeracao;
@@ -531,6 +606,7 @@ class _ResultadoVenda {
   const _ResultadoVenda({required this.quantidade, this.numeracao});
 }
 
+/// Diálogo modal para registrar a venda com atalhos de numeração e quantidade
 class _DialogoVenda extends StatefulWidget {
   final Calcado calcado;
 
@@ -547,20 +623,47 @@ class _DialogoVendaState extends State<_DialogoVenda> {
   @override
   void initState() {
     super.initState();
+    // Pré-seleciona a primeira numeração que tiver estoque disponível
     final disponiveis = widget.calcado.tamanhosComEstoque
         .where((t) => (t.estoque ?? 0) > 0)
         .toList();
     if (disponiveis.isNotEmpty) {
       _numeracaoSelecionada = disponiveis.first.numeracao;
+      _quantidade = 1;
+    } else {
+      _quantidade = 0;
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    // Referência ao calçado recebido pelo diálogo
     final calcado = widget.calcado;
+    // Obtém a grade equilibrada de tamanhos e estoques
     final grade = calcado.tamanhosComEstoque;
-    final total = calcado.preco * _quantidade;
-    final atalhos = [1, 2, 3, 5].where((q) => q <= calcado.estoque).toList();
+
+    // Obtém o estoque disponível especificamente para a numeração selecionada
+    final estoqueDoTamanho = _numeracaoSelecionada != null
+        ? (grade.any((t) => t.numeracao == _numeracaoSelecionada)
+            ? (grade
+                    .firstWhere((t) => t.numeracao == _numeracaoSelecionada)
+                    .estoque ??
+                0)
+            : calcado.estoque)
+        : calcado.estoque;
+
+    // Limite máximo de unidades que podem ser vendidas nesta operação
+    final maxPermitido = estoqueDoTamanho > 0 ? estoqueDoTamanho : 0;
+
+    // Quantidade efetiva respeitando os limites sem mutação de estado durante o build
+    final qtdEfetiva = maxPermitido == 0
+        ? 0
+        : _quantidade.clamp(1, maxPermitido);
+
+    // Calcula o valor total em reais com base na quantidade válida
+    final total = calcado.preco * qtdEfetiva;
+    // Filtra atalhos numéricos que cabem dentro do estoque do tamanho
+    final atalhos = [1, 2, 3, 5].where((q) => q <= maxPermitido).toList();
 
     return AlertDialog(
       title: const Text('Registrar venda'),
@@ -578,6 +681,7 @@ class _DialogoVendaState extends State<_DialogoVenda> {
               '${calcado.estoque} ${calcado.estoque == 1 ? 'unidade disponível' : 'unidades disponíveis'} · ${Formato.real(calcado.preco)} / un.',
               style: TextStyle(color: context.textMuted, fontSize: 13),
             ),
+            // Seleção da numeração específica da saída
             if (grade.isNotEmpty) ...[
               const SizedBox(height: 14),
               Text(
@@ -601,45 +705,74 @@ class _DialogoVendaState extends State<_DialogoVenda> {
                       selected: _numeracaoSelecionada == t.numeracao,
                       showCheckmark: false,
                       onSelected: (t.estoque ?? 0) > 0
-                          ? (_) => setState(
-                              () => _numeracaoSelecionada = t.numeracao,
-                            )
+                          ? (_) => setState(() {
+                              // Seleciona a numeração clicada
+                              _numeracaoSelecionada = t.numeracao;
+                              // Quantidade disponível neste tamanho
+                              final disp = t.estoque ?? 0;
+                              // Ajusta a quantidade caso ultrapasse o limite do novo tamanho
+                              if (_quantidade > disp) {
+                                _quantidade = disp > 0 ? disp : 1;
+                              } else if (_quantidade < 1 && disp > 0) {
+                                _quantidade = 1;
+                              }
+                            })
                           : null,
                     ),
                 ],
               ),
+              // Informa o saldo disponível exclusivamente no tamanho selecionado
+              if (_numeracaoSelecionada != null) ...[
+                const SizedBox(height: 6),
+                Text(
+                  maxPermitido > 0
+                      ? 'Disponível no Tam. ${Formato.numeracao(_numeracaoSelecionada!)}: $maxPermitido ${maxPermitido == 1 ? 'unidade' : 'unidades'}'
+                      : 'Tam. ${Formato.numeracao(_numeracaoSelecionada!)} sem estoque disponível',
+                  style: TextStyle(
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w600,
+                    color: maxPermitido > 0
+                        ? const Color(0xFF10B981)
+                        : Colors.redAccent,
+                  ),
+                ),
+              ],
             ],
             const SizedBox(height: 16),
+            // Controle numérico com botões de aumentar e diminuir quantidade
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 IconButton(
                   tooltip: 'Diminuir quantidade',
-                  onPressed: _quantidade > 1
-                      ? () => setState(() => _quantidade--)
+                  onPressed: qtdEfetiva > 1
+                      ? () => setState(() => _quantidade = qtdEfetiva - 1)
                       : null,
                   icon: const Icon(Icons.remove_circle_outline),
                 ),
                 SizedBox(
                   width: 64,
                   child: Text(
-                    '$_quantidade',
+                    '$qtdEfetiva',
                     textAlign: TextAlign.center,
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 26,
                       fontWeight: FontWeight.w700,
+                      color: maxPermitido == 0 ? Colors.redAccent : null,
                     ),
                   ),
                 ),
                 IconButton(
                   tooltip: 'Aumentar quantidade',
-                  onPressed: _quantidade < calcado.estoque
-                      ? () => setState(() => _quantidade++)
+                  // Bloqueia rigorosamente o aumento quando atinge o estoque disponível do tamanho
+                  onPressed: (qtdEfetiva < maxPermitido)
+                      ? () => setState(() => _quantidade = qtdEfetiva + 1)
                       : null,
                   icon: const Icon(Icons.add_circle_outline),
                 ),
               ],
             ),
+            // Chips de atalho rápido de quantidade (1, 2, 3, 5 un.)
             if (atalhos.length > 1) ...[
               const SizedBox(height: 8),
               Wrap(
@@ -649,7 +782,7 @@ class _DialogoVendaState extends State<_DialogoVenda> {
                   for (final q in atalhos)
                     ChoiceChip(
                       label: Text('$q un.'),
-                      selected: _quantidade == q,
+                      selected: qtdEfetiva == q,
                       showCheckmark: false,
                       onSelected: (_) => setState(() => _quantidade = q),
                     ),
@@ -657,6 +790,7 @@ class _DialogoVendaState extends State<_DialogoVenda> {
               ),
             ],
             const SizedBox(height: 16),
+            // Resumo do valor total da venda
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
               decoration: BoxDecoration(
@@ -686,17 +820,21 @@ class _DialogoVendaState extends State<_DialogoVenda> {
         ),
       ),
       actions: [
+        // Cancelar
         TextButton(
           onPressed: () => Navigator.of(context).pop(),
           child: const Text('Cancelar'),
         ),
+        // Confirmar venda (bloqueado se quantidade for zero ou maior que o estoque do tamanho)
         ElevatedButton(
-          onPressed: () => Navigator.of(context).pop(
-            _ResultadoVenda(
-              quantidade: _quantidade,
-              numeracao: _numeracaoSelecionada,
-            ),
-          ),
+          onPressed: (qtdEfetiva > 0 && qtdEfetiva <= maxPermitido)
+              ? () => Navigator.of(context).pop(
+                  _ResultadoVenda(
+                    quantidade: qtdEfetiva,
+                    numeracao: _numeracaoSelecionada,
+                  ),
+                )
+              : null,
           child: const Text('Confirmar venda'),
         ),
       ],
@@ -704,6 +842,7 @@ class _DialogoVendaState extends State<_DialogoVenda> {
   }
 }
 
+/// Diálogo modal para ajuste manual de quantidade no estoque
 class _DialogoEstoque extends StatefulWidget {
   final int estoqueAtual;
   final String nome;
@@ -812,6 +951,7 @@ class _DialogoEstoqueState extends State<_DialogoEstoque> {
   }
 }
 
+/// Exibe a imagem ampliada do calçado com suporte a proporção 16:10 e fallback seguro
 class _Imagem extends StatelessWidget {
   final Calcado calcado;
   const _Imagem({required this.calcado});
@@ -824,6 +964,41 @@ class _Imagem extends StatelessWidget {
       color: context.textMuted.withValues(alpha: 0.5),
     );
 
+    Widget construirImagem() {
+      if (!calcado.temImagem) return fallback;
+
+      if (calcado.imagemBytes != null) {
+        return Image.memory(
+          calcado.imagemBytes!,
+          fit: BoxFit.contain,
+          errorBuilder: (_, __, ___) => fallback,
+        );
+      }
+
+      final url = calcado.imagemUrl!;
+      if (url.startsWith('data:image')) {
+        final idx = url.indexOf('base64,');
+        if (idx != -1) {
+          try {
+            final bytes = base64Decode(url.substring(idx + 7));
+            return Image.memory(
+              bytes,
+              fit: BoxFit.contain,
+              errorBuilder: (_, __, ___) => fallback,
+            );
+          } catch (_) {
+            return fallback;
+          }
+        }
+      }
+
+      return Image.network(
+        url,
+        fit: BoxFit.contain,
+        errorBuilder: (_, __, ___) => fallback,
+      );
+    }
+
     return Container(
       decoration: BoxDecoration(
         color: context.isDark
@@ -835,24 +1010,13 @@ class _Imagem extends StatelessWidget {
       clipBehavior: Clip.antiAlias,
       child: AspectRatio(
         aspectRatio: 16 / 10,
-        child: !calcado.temImagem
-            ? fallback
-            : calcado.imagemBytes != null
-            ? Image.memory(
-                calcado.imagemBytes!,
-                fit: BoxFit.contain,
-                errorBuilder: (_, __, ___) => fallback,
-              )
-            : Image.network(
-                calcado.imagemUrl!,
-                fit: BoxFit.contain,
-                errorBuilder: (_, __, ___) => fallback,
-              ),
+        child: construirImagem(),
       ),
     );
   }
 }
 
+/// Cartão retangular representando uma numeração na grade, com sua medida em cm e unidades disponíveis
 class _TileMedida extends StatelessWidget {
   final MedidaTamanho medida;
   final VoidCallback? onTap;
@@ -925,6 +1089,7 @@ class _TileMedida extends StatelessWidget {
   }
 }
 
+/// Linha da tabela técnica de ficha do produto
 class _LinhaFicha extends StatelessWidget {
   final String rotulo;
   final String valor;
