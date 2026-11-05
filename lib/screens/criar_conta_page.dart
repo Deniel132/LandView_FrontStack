@@ -127,14 +127,6 @@ class _CriarContaPageState extends State<CriarContaPage> {
                   // Logotipo da loja no topo com diâmetro 72px
                   const LogoLoja(tamanho: 72, sombra: true),
                   const SizedBox(height: 22),
-                  // Se estiver em modo demonstração, exibe aviso informativo
-                  if (ApiService.modoDemo) ...[
-                    const FaixaAviso.info(
-                      mensagem:
-                          'Modo demonstração: a conta criada ficará ativa em memória durante esta sessão.',
-                    ),
-                    const SizedBox(height: 16),
-                  ],
                   // Cartão com o formulário de cadastro
                   Container(
                     padding: const EdgeInsets.all(22),

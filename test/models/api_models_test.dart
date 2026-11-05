@@ -2,8 +2,6 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:parte2_flutter/models/calcado.dart';
 import 'package:parte2_flutter/models/dashboard.dart';
 import 'package:parte2_flutter/models/venda.dart';
-import 'package:parte2_flutter/services/api_exception.dart';
-import 'package:parte2_flutter/services/dados_demo.dart';
 
 void main() {
   group('Calcado', () {
@@ -89,47 +87,24 @@ void main() {
     expect(venda.dataVenda, DateTime.utc(2026, 10, 6, 20));
   });
 
-  test(
-    'venda demo baixa estoque e aumenta vendas do produto correto',
-    () async {
-      final demo = DadosDemo.instance;
-      const calcadoId = 1;
-      final estoqueAntes = (await demo.buscar(calcadoId)).estoque;
-      final dashboardAntes = await demo.dashboard();
-      final vendasAntes = dashboardAntes.maisVendidos
-          .singleWhere((item) => item.id == calcadoId)
-          .vendas;
+  test('descontarDoTamanho baixa estoque do tamanho e do total do calçado', () {
+    final calcado = Calcado(
+      id: 1,
+      nome: 'Air Zoom Pegasus 40',
+      marca: 'Nike',
+      tipo: TipoCalcado.tenis,
+      forma: FormaCalcado.padrao,
+      preco: 799.9,
+      estoque: 9,
+      tamanhos: Calcado.gerarTabelaPadrao(FormaCalcado.padrao),
+    );
 
-      final venda = await demo.registrarVenda(
-        calcadoId: calcadoId,
-        quantidade: 2,
-      );
-      final calcadoDepois = await demo.buscar(calcadoId);
-      final dashboardDepois = await demo.dashboard();
+    final aposVenda = calcado.descontarDoTamanho(37, 1);
 
-      expect(venda, isA<VendaRegistrada>());
-      expect(venda.calcadoId, calcadoId);
-      expect(venda.quantidade, 2);
-      expect(venda.estoqueAtual, estoqueAntes - 2);
-      expect(calcadoDepois.estoque, estoqueAntes - 2);
-      expect(
-        dashboardDepois.resumo.vendas30Dias,
-        dashboardAntes.resumo.vendas30Dias + 2,
-      );
-      expect(
-        dashboardDepois.maisVendidos
-            .singleWhere((item) => item.id == calcadoId)
-            .vendas,
-        vendasAntes + 2,
-      );
-
-      await expectLater(
-        demo.registrarVenda(
-          calcadoId: calcadoId,
-          quantidade: calcadoDepois.estoque + 1,
-        ),
-        throwsA(isA<ApiException>()),
-      );
-    },
-  );
+    expect(aposVenda.estoque, 8);
+    expect(
+      aposVenda.tamanhos.firstWhere((t) => t.numeracao == 37).estoque,
+      0,
+    );
+  });
 }

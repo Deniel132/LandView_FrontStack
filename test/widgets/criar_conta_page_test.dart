@@ -1,12 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:parte2_flutter/screens/login_page.dart';
-import 'package:parte2_flutter/services/api_service.dart';
 
 void main() {
-  setUp(() => ApiService.modoDemoOverride = true);
-  tearDown(() => ApiService.modoDemoOverride = null);
-
   testWidgets('abre a tela de criar conta pelo login', (tester) async {
     await tester.pumpWidget(const MaterialApp(home: LoginPage()));
     await tester.tap(find.text('Criar uma conta'));
@@ -14,12 +10,6 @@ void main() {
 
     expect(find.text('Nova conta'), findsOneWidget);
     expect(find.text('Confirmar senha'), findsOneWidget);
-    expect(
-      find.textContaining(
-        'Modo demonstração: a conta criada ficará ativa em memória',
-      ),
-      findsOneWidget,
-    );
   });
 
   testWidgets('valida campos obrigatórios antes do cadastro', (tester) async {

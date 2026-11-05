@@ -59,8 +59,9 @@ class _DetalhePageState extends State<DetalhePage> {
   /// Carrega a grade de tamanhos salva no SharedPreferences para garantir que qualquer customização
   /// individual por numeração permaneça intacta mesmo ao reabrir a página de detalhes.
   Future<void> _reconciliarGrade() async {
-    // Se o calçado não possuir um identificador numérico válido, encerra a busca
+    // Obtém o identificador numérico do calçado atual
     final id = _calcado.id;
+    // Se o calçado não possuir um identificador numérico válido, encerra a busca
     if (id == null) return;
     // Consulta o armazenamento local por numerações salvas deste calçado
     final gradeSalva = await Sessao.obterGradeTamanhos(id);
@@ -68,7 +69,9 @@ class _DetalhePageState extends State<DetalhePage> {
     if (gradeSalva == null || gradeSalva.isEmpty || !mounted) return;
     // Atualiza o estado da tela aplicando a grade salva e equilibrando as quantidades
     setState(() {
+      // Cria cópia do calçado com a grade recuperada do armazenamento local
       final comGrade = _calcado.copyWith(tamanhos: gradeSalva);
+      // Sincroniza a distribuição da grade com o saldo de estoque total do calçado
       _calcado = comGrade.copyWith(tamanhos: comGrade.tamanhosComEstoque);
     });
   }
@@ -117,11 +120,8 @@ class _DetalhePageState extends State<DetalhePage> {
           .descontarDoTamanho(numeracao, quantidade)
           .copyWith(estoque: venda.estoqueAtual);
 
-      // Salva a nova grade detalhada no armazenamento local garantindo persistência imediata (fora do modo demo)
-      if (!ApiService.modoDemo) {
-        // Grava no SharedPreferences
-        await Sessao.salvarGradeTamanhos(calcadoId, aposDesconto.tamanhos);
-      }
+      // Salva a nova grade detalhada no armazenamento local garantindo persistência imediata
+      await Sessao.salvarGradeTamanhos(calcadoId, aposDesconto.tamanhos);
 
       // Sincroniza a nova quantidade total no backend
       try {
@@ -173,11 +173,8 @@ class _DetalhePageState extends State<DetalhePage> {
       final gradeAjustada = _c.copyWith(estoque: novoEstoque).tamanhosComEstoque;
       // Cria a nova instância com o estoque ajustado e a grade equilibrada
       final calcadoNovo = _c.copyWith(estoque: novoEstoque, tamanhos: gradeAjustada);
-      // Salva a nova grade de tamanhos no armazenamento local (fora do modo demonstração)
-      if (!ApiService.modoDemo) {
-        // Grava no SharedPreferences
-        await Sessao.salvarGradeTamanhos(_c.id!, gradeAjustada);
-      }
+      // Salva a nova grade de tamanhos no armazenamento local
+      await Sessao.salvarGradeTamanhos(_c.id!, gradeAjustada);
       // Sincroniza a alteração de estoque no backend
       final atualizado = await ApiService.instance.atualizar(calcadoNovo);
       if (!mounted) return;
@@ -224,11 +221,8 @@ class _DetalhePageState extends State<DetalhePage> {
         medida.numeracao,
         novaQtd,
       );
-      // Salva a nova grade de tamanhos no armazenamento local (fora do modo demonstração)
-      if (!ApiService.modoDemo) {
-        // Grava no SharedPreferences
-        await Sessao.salvarGradeTamanhos(_c.id!, calcadoNovo.tamanhos);
-      }
+      // Salva a nova grade de tamanhos no armazenamento local
+      await Sessao.salvarGradeTamanhos(_c.id!, calcadoNovo.tamanhos);
       // Sincroniza a atualização no backend
       final atualizado = await ApiService.instance.atualizar(calcadoNovo);
       if (!mounted) return;

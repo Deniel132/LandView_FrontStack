@@ -26,8 +26,6 @@ import '../utils/criptografia_senha.dart';
 import '../utils/formato.dart';
 // Exceção customizada da aplicação para transporte de erros e status HTTP.
 import 'api_exception.dart';
-// Conjunto de dados simulados em memória para quando o app roda em modo de demonstração.
-import 'dados_demo.dart';
 // Gerenciador central de sessão do usuário e persistência do token de acesso.
 import 'sessao.dart';
 
@@ -46,16 +44,13 @@ class ApiService {
   // Tempo limite máximo padrão de espera para requisições de rede (35 segundos para acomodar cold start do Render).
   static const _timeout = Duration(seconds: 35);
 
-  /// Flag que determina se o app roda conectado à API real ou com dados simulados locais.
-  /// Por padrão é falso (conecta à API no Render). Pode ser ativado via: `--dart-define=DEMO=true`.
-  static const bool _modoDemoEnv = bool.fromEnvironment(
-    'DEMO',
-    defaultValue: false,
-  );
-  // Permite sobrescrever o modo demonstração em tempo de execução (útil em testes automatizados).
-  static bool? modoDemoOverride;
-  // Getter público que retorna o estado atual do modo de demonstração.
-  static bool get modoDemo => modoDemoOverride ?? _modoDemoEnv;
+  // Callback opcional para interceptar o registro de venda em testes de widget sem tráfego de rede.
+  static Future<VendaRegistrada> Function({
+    required int calcadoId,
+    required int quantidade,
+  })? registrarVendaTeste;
+  // Callback opcional para interceptar a atualização de calçado em testes de widget sem tráfego de rede.
+  static Future<Calcado> Function(Calcado calcado)? atualizarTeste;
 
   /// URL base oficial da API no Render (sem a barra final nem /docs).
   /// Permite apontar para outro servidor (como localhost) via:
@@ -112,21 +107,6 @@ class ApiService {
   /// Autentica o usuário no sistema criptografando a senha no frontend (`enc:v1:...`),
   /// chama a rota oficial `POST /api/user/login` do Render e inicializa a sessão do app.
   Future<Usuario> login(String email, String senha) async {
-    // Se o app estiver em modo de demonstração, valida nos dados mockados locais.
-    if (modoDemo) {
-      // Autentica nos dados simulados
-      var usuario = await DadosDemo.instance.login(email);
-      // Verifica se o usuário definiu um nome de exibição personalizado para este e-mail
-      final nomeCustom = await Sessao.obterNomeCustomizado(email);
-      // Se houver nome personalizado salvo, aplica ao usuário logado
-      if (nomeCustom != null && nomeCustom.isNotEmpty) {
-        usuario = usuario.copyWith(nome: nomeCustom);
-      }
-      // Inicia a sessão ativa com o token de demonstração
-      Sessao.instance.iniciar('token-demo', usuario);
-      return usuario;
-    }
-
     // Remove espaços em branco do e-mail.
     final emailLimpo = email.trim();
     // Criptografa a senha para envio seguro pela rede.
@@ -260,12 +240,6 @@ class ApiService {
     String senha, {
     String role = 'SELLER',
   }) async {
-    // Se estiver em modo demonstração, registra na memória local de testes.
-    if (modoDemo) {
-      await DadosDemo.instance.criarConta(email, senha, role: role);
-      return;
-    }
-
     // Sanitiza e padroniza os campos antes do envio.
     final emailLimpo = email.trim();
     final senhaCriptografada = CriptografiaSenha.criptografar(senha);
@@ -341,7 +315,6 @@ class ApiService {
 
   /// Retorna os dados consolidados do painel da loja (totais, mais vendidos, estoque baixo/alto e extremos).
   Future<Dashboard> dashboard() async {
-    if (modoDemo) return DadosDemo.instance.dashboard();
     return _dashboardIntegrado();
   }
 
@@ -349,15 +322,12 @@ class ApiService {
 
   /// Retorna a listagem de todos os modelos de calçados cadastrados no catálogo.
   Future<List<Calcado>> listar() async {
-    if (modoDemo) return DadosDemo.instance.listar();
     return _listarIntegrado();
   }
 
   /// Consulta um calçado específico pelo ID combinando produto (`GET /product/{id}`),
   /// categoria (`GET /category/{id}`) e quantidade de estoque (`GET /stock/{id}`).
   Future<Calcado> buscar(int id) async {
-    if (modoDemo) return DadosDemo.instance.buscar(id);
-
     // 1. Consulta a rota GET /product/{id} na API oficial do Render.
     Map<String, dynamic>? produtoRender;
     try {
@@ -418,14 +388,25 @@ class ApiService {
         // Caso contrário, usa a instância do banco com o saldo de estoque atualizado
         : item.copyWith(estoque: estoqueAtual);
 
-    // Recupera a grade de tamanhos detalhada salva no armazenamento local para este calçado
-    final gradeSalva = await Sessao.obterGradeTamanhos(id);
-    // Se houver grade salva localmente, aplica mantendo a coerência com o estoque do backend
-    if (gradeSalva != null && gradeSalva.isNotEmpty) {
-      // Mescla a grade salva na instância de retorno
-      final comGrade = retorno.copyWith(tamanhos: gradeSalva);
-      // Reconcilia proporcionalmente caso o saldo total do banco tenha sido alterado externamente
-      retorno = comGrade.copyWith(tamanhos: comGrade.tamanhosComEstoque);
+    // Verifica se o registro do banco de dados já possui distribuição de estoque por numeração
+    final temGradeNoBanco = retorno.tamanhos.any((t) => t.estoque != null);
+    // Se a grade já veio preenchida do banco de dados
+    if (temGradeNoBanco) {
+      // Sincroniza a grade vinda do banco com o estoque atual
+      retorno = retorno.copyWith(tamanhos: retorno.tamanhosComEstoque);
+      // Atualiza o cache local no SharedPreferences para este calçado
+      await Sessao.salvarGradeTamanhos(id, retorno.tamanhos);
+    // Caso o banco não tenha grade detalhada, consulta o cache local
+    } else {
+      // Recupera a grade de tamanhos detalhada salva no armazenamento local para este calçado
+      final gradeSalva = await Sessao.obterGradeTamanhos(id);
+      // Se houver grade salva localmente, aplica mantendo a coerência com o estoque do backend
+      if (gradeSalva != null && gradeSalva.isNotEmpty) {
+        // Mescla a grade salva na instância de retorno
+        final comGrade = retorno.copyWith(tamanhos: gradeSalva);
+        // Reconcilia proporcionalmente caso o saldo total do banco tenha sido alterado externamente
+        retorno = comGrade.copyWith(tamanhos: comGrade.tamanhosComEstoque);
+      }
     }
 
     // Retorna o objeto calçado final com grade e estoque perfeitamente sincronizados
@@ -434,12 +415,6 @@ class ApiService {
 
   /// Converte a foto selecionada em bytes para data URI Base64 pronta para persistência.
   Future<String> enviarImagem(Uint8List bytes, String nomeArquivo) async {
-    // No modo demonstração o upload não é permitido.
-    if (modoDemo) {
-      throw ApiException(
-        'O envio de fotos não está disponível no modo demonstração.',
-      );
-    }
     // Determina o tipo MIME com base na extensão do arquivo de imagem.
     final lower = nomeArquivo.toLowerCase();
     final mime = (lower.endsWith('.jpg') || lower.endsWith('.jpeg'))
@@ -454,21 +429,19 @@ class ApiService {
   /// Cria categoria (`POST /category/`), produto (`POST /product/`) e estoque (`POST /stock/`)
   /// de forma sincronizada na API do Render e no banco de dados.
   Future<Calcado> criar(Calcado calcado) async {
-    if (modoDemo) return DadosDemo.instance.criar(calcado);
     return _criarIntegrado(calcado);
   }
 
   /// Atualiza os dados de produto (`PUT /product/{id}`) e estoque (`PUT /stock/{id}`)
   /// no Render e no banco compartilhado.
   Future<Calcado> atualizar(Calcado calcado) async {
-    if (modoDemo) return DadosDemo.instance.atualizar(calcado);
+    if (atualizarTeste != null) return atualizarTeste!(calcado);
     return _atualizarIntegrado(calcado);
   }
 
   /// Remove o estoque (`DELETE /stock/{id}`) e o produto (`DELETE /product/{id}`)
   /// utilizando as rotas oficiais de exclusão da API.
   Future<void> excluir(int id) async {
-    if (modoDemo) return DadosDemo.instance.excluir(id);
     await _excluirIntegrado(id);
   }
 
@@ -478,8 +451,8 @@ class ApiService {
     required int calcadoId,
     required int quantidade,
   }) async {
-    if (modoDemo) {
-      return DadosDemo.instance.registrarVenda(
+    if (registrarVendaTeste != null) {
+      return registrarVendaTeste!(
         calcadoId: calcadoId,
         quantidade: quantidade,
       );
@@ -497,14 +470,6 @@ class ApiService {
     int? idProduct,
     int? idStock,
   }) async {
-    if (modoDemo) {
-      return DadosDemo.instance.listarSaidas(
-        page: page,
-        pageSize: pageSize,
-        idProduct: idProduct,
-      );
-    }
-
     // Constrói os parâmetros de consulta na URL.
     final queryParams = <String, String>{
       'page': page.toString(),
@@ -579,14 +544,6 @@ class ApiService {
     double? numeracaoHabitual,
     String? marcaHabitual,
   }) async {
-    if (modoDemo) {
-      return DadosDemo.instance.recomendar(
-        calcadoId: calcadoId,
-        medidaPeCm: medidaPeCm,
-        numeracaoHabitual: numeracaoHabitual,
-        marcaHabitual: marcaHabitual,
-      );
-    }
     return _recomendarIntegrado(
       calcadoId: calcadoId,
       medidaPeCm: medidaPeCm,
@@ -625,6 +582,7 @@ class ApiService {
     Map<String, dynamic> prod,
     Map<int, Map<String, dynamic>> categoriasPorId,
     Map<int, Map<String, dynamic>> estoquesPorProdutoId,
+    Map<int, int> vendasPorProdutoId,
   ) {
     final prodId = (prod['id'] as num).toInt();
     final catId = (prod['product_category_id'] as num?)?.toInt();
@@ -659,7 +617,9 @@ class ApiService {
         ? rawTamanhos
         : _tabelaPadrao(comp37Padrao);
 
-    final vendas = (meta['vendas_30_dias'] as num?)?.toInt() ?? 0;
+    // Soma as saídas registradas na tabela de auditoria ou utiliza o metadado salvo
+    final vendas =
+        vendasPorProdutoId[prodId] ?? (meta['vendas_30_dias'] as num?)?.toInt() ?? 0;
     final estoque = (stock?['quantity'] as num?)?.toInt() ?? 0;
 
     // Constrói a instância do Calçado a partir dos dados normalizados.
@@ -677,7 +637,7 @@ class ApiService {
     return (calcado, vendas);
   }
 
-  /// Carrega concorrentemente produtos ativos, categorias e estoques, associando-os em pares (Calçado, Vendas).
+  /// Carrega concorrentemente produtos ativos, categorias, estoques e saídas, associando-os em pares (Calçado, Vendas).
   Future<List<(Calcado, int)>> _carregarTodosComVendas() async {
     final respostas = await Future.wait([
       http
@@ -695,15 +655,43 @@ class ApiService {
             headers: _supabaseHeaders,
           )
           .timeout(_timeout),
+      http
+          .get(
+            _sbUri('/stock_exit_register?select=id_product,quantity'),
+            headers: _supabaseHeaders,
+          )
+          .timeout(_timeout),
     ]);
 
-    // Decodifica as 3 listas retornadas em paralelo.
+    // Decodifica as listas retornadas em paralelo.
     final produtos =
         jsonDecode(utf8.decode(respostas[0].bodyBytes)) as List<dynamic>;
     final categorias =
         jsonDecode(utf8.decode(respostas[1].bodyBytes)) as List<dynamic>;
     final estoques =
         jsonDecode(utf8.decode(respostas[2].bodyBytes)) as List<dynamic>;
+
+    // Acumula o total de vendas por produto a partir dos registros reais de saída
+    final vendasPorProdutoId = <int, int>{};
+    // Verifica se a resposta da tabela de saídas retornou com sucesso (HTTP 200)
+    if (respostas.length > 3 && respostas[3].statusCode == 200) {
+      // Decodifica a lista JSON de saídas de estoque
+      final saidas =
+          jsonDecode(utf8.decode(respostas[3].bodyBytes)) as List<dynamic>;
+      // Percorre cada registro de saída para somar as quantidades vendidas por produto
+      for (final s in saidas) {
+        // Converte o item atual para mapa chave-valor
+        final mapa = s as Map<String, dynamic>;
+        // Extrai o identificador do produto associado à saída
+        final pid = (mapa['id_product'] as num?)?.toInt();
+        // Extrai a quantidade baixada na saída (ou zero caso ausente)
+        final qtd = (mapa['quantity'] as num?)?.toInt() ?? 0;
+        // Se o produto for válido, soma a quantidade ao acumulador daquele produto
+        if (pid != null) {
+          vendasPorProdutoId[pid] = (vendasPorProdutoId[pid] ?? 0) + qtd;
+        }
+      }
+    }
 
     // Indexa categorias pelo seu ID para busca O(1).
     final categoriasPorId = <int, Map<String, dynamic>>{
@@ -725,6 +713,7 @@ class ApiService {
           p as Map<String, dynamic>,
           categoriasPorId,
           estoquesPorProdutoId,
+          vendasPorProdutoId,
         ),
     ];
   }
@@ -737,9 +726,22 @@ class ApiService {
     final lista = <Calcado>[];
     // Itera por cada calçado recuperado
     for (final (c, _) in pares) {
-      // Se possuir ID numérico válido, busca grade individual persistida
+      // Se possuir ID numérico válido, verifica se o banco já trouxe a grade ou usa a persistida localmente
       if (c.id != null) {
-        // Consulta grade salva no SharedPreferences
+        // Verifica se alguma numeração veio com estoque individual preenchido do banco de dados
+        final temGradeNoBanco = c.tamanhos.any((t) => t.estoque != null);
+        // Caso o banco já possua a distribuição por tamanho salva em sub_characteristics
+        if (temGradeNoBanco) {
+          // Equilibra com o estoque total e atualiza o cache local
+          final ajustado = c.copyWith(tamanhos: c.tamanhosComEstoque);
+          // Sincroniza a grade do banco no SharedPreferences local
+          await Sessao.salvarGradeTamanhos(c.id!, ajustado.tamanhos);
+          // Adiciona o calçado ajustado na lista de retorno
+          lista.add(ajustado);
+          // Avança para o próximo item
+          continue;
+        }
+        // Consulta grade salva no SharedPreferences caso o banco ainda não tenha sub_characteristics
         final gradeSalva = await Sessao.obterGradeTamanhos(c.id!);
         // Se houver grade salva, aplica conciliando com o estoque do banco
         if (gradeSalva != null && gradeSalva.isNotEmpty) {
@@ -890,7 +892,7 @@ class ApiService {
     // Estrutura de metadados ricos armazenados em JSON.
     final meta = {
       'imagem_url': c.temImagemUrl ? c.imagemUrl!.trim() : null,
-      'tamanhos': c.tamanhos.map((t) => t.toJson()).toList(),
+      'tamanhos': c.tamanhosComEstoque.map((t) => t.toJson()).toList(),
       'vendas_30_dias': 0,
     };
 
@@ -926,6 +928,8 @@ class ApiService {
             body: jsonEncode({
               'id_product': prodId,
               'quantity': c.estoque,
+              'characteristics': c.forma.valor,
+              'sub_characteristics': jsonEncode(meta),
             }),
           )
           .timeout(_timeout);
@@ -984,6 +988,12 @@ class ApiService {
     // Recupera o registro atual de estoque no banco para identificar o stock_id.
     final stockRow = await _obterStockRowSupabase(id);
 
+    // Estrutura de metadados ricos para persistir imagem e grade individual por tamanho na nuvem
+    final meta = {
+      'imagem_url': c.temImagemUrl ? c.imagemUrl!.trim() : null,
+      'tamanhos': c.tamanhosComEstoque.map((t) => t.toJson()).toList(),
+    };
+
     // 2. Atualiza a quantidade chamando PUT /stock/{stock_id} no Render.
     if (stockRow != null) {
       final stockId = (stockRow['id'] as num).toInt();
@@ -992,7 +1002,12 @@ class ApiService {
           (uri) => http.put(
             uri('/stock/$stockId'),
             headers: _headers,
-            body: jsonEncode({'product_id': id, 'quantity': c.estoque}),
+            body: jsonEncode({
+              'product_id': id,
+              'quantity': c.estoque,
+              'characteristics': c.forma.valor,
+              'sub_characteristics': jsonEncode(meta),
+            }),
           ),
         );
       } on ApiException catch (e) {
@@ -1005,6 +1020,8 @@ class ApiService {
             headers: _supabaseHeaders,
             body: jsonEncode({
               'quantity': c.estoque,
+              'characteristics': c.forma.valor,
+              'sub_characteristics': jsonEncode(meta),
             }),
           )
           .timeout(_timeout);
@@ -1016,6 +1033,8 @@ class ApiService {
             body: jsonEncode({
               'id_product': id,
               'quantity': c.estoque,
+              'characteristics': c.forma.valor,
+              'sub_characteristics': jsonEncode(meta),
             }),
           )
           .timeout(_timeout);
@@ -1138,34 +1157,25 @@ class ApiService {
       if (e.status == 401) rethrow;
     }
 
-    // Tenta registrar a saída na rota oficial POST /stock-exit/ da API
-    try {
-      await _enviar(
-        (uri) => http.post(
-          uri('/stock-exit/'),
-          headers: _headers,
-          body: jsonEncode({
-            'stock_id': stockId,
-            'quantity': quantidade,
-          }),
-        ),
-      );
-    } catch (_) {}
-
-    // Salva o novo saldo no banco de dados.
+    // Salva o novo saldo no banco de dados preservando características e grade.
     await http
         .patch(
           _sbUri('/stock_product?id=eq.$stockId'),
           headers: _supabaseHeaders,
           body: jsonEncode({
             'quantity': novoEstoque,
+            if (stockRow['characteristics'] != null)
+              'characteristics': stockRow['characteristics'],
+            if (stockRow['sub_characteristics'] != null)
+              'sub_characteristics': stockRow['sub_characteristics'],
           }),
         )
         .timeout(_timeout);
 
-    // Registra a operação na tabela de auditoria de saídas (stock_exit_register).
+    // Registra a operação com a quantidade exata vendida na tabela de auditoria (stock_exit_register),
+    // que também alimenta a rota GET /stock-exit/ da API do Render e os indicadores de vendas do Dashboard.
     try {
-      final currentUserId = Sessao.instance.usuario?.id ?? 22;
+      final currentUserId = Sessao.instance.usuario?.id ?? 34;
       await http
           .post(
             _sbUri('/stock_exit_register'),

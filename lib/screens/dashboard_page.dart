@@ -22,8 +22,6 @@ import '../widgets/contato_loja.dart';
 import '../widgets/estados.dart';
 // Widget que renderiza o logo circular estilizado da LandView.
 import '../widgets/logo_loja.dart';
-// Widget de pílula/badge para destaque visual (usado para indicar modo de demonstração).
-import '../widgets/pilula.dart';
 // Tela de cadastro de novos modelos de calçados.
 import 'cadastro_page.dart';
 // Tela de listagem e catálogo completo de calçados.
@@ -518,20 +516,10 @@ class _Cabecalho extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 6),
-        // Exibe a data por extenso e, caso ativo, o selo indicativo de modo de demonstração.
-        Wrap(
-          spacing: 10,
-          runSpacing: 6,
-          crossAxisAlignment: WrapCrossAlignment.center,
-          children: [
-            Text(
-              data,
-              style: TextStyle(fontSize: 13.5, color: context.textMuted),
-            ),
-            // Pílula visual informativa se o app estiver conectado a dados simulados.
-            if (ApiService.modoDemo)
-              const Pilula(texto: 'Dados de demonstração', destaque: true),
-          ],
+        // Exibe a data atual por extenso.
+        Text(
+          data,
+          style: TextStyle(fontSize: 13.5, color: context.textMuted),
         ),
       ],
     );
@@ -1205,7 +1193,7 @@ class _DestaquesApiDashboard extends StatelessWidget {
               Icon(Icons.insights_rounded, size: 18, color: context.accent),
               const SizedBox(width: 8),
               Text(
-                'Destaques de estoque (API)',
+                'Destaques de estoque',
                 style: TextStyle(
                   fontSize: 13,
                   fontWeight: FontWeight.w700,
@@ -1452,7 +1440,7 @@ class _ModalHistoricoSaidasState extends State<_ModalHistoricoSaidas> {
                         ),
                       ),
                       Text(
-                        'Auditoria de saídas e baixas registradas na API',
+                        'Auditoria de saídas e baixas registradas',
                         style: TextStyle(
                           fontSize: 12,
                           color: context.textMuted,

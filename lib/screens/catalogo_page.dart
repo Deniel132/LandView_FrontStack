@@ -23,9 +23,6 @@ import 'cadastro_page.dart';
 // Importa a tela de detalhes do calçado
 import 'detalhe_page.dart';
 
-/// Enum local para o status visual da conexão com a API
-enum _StatusApi { conectando, online, offline, demonstracao }
-
 /// Opções de filtro por situação de estoque
 enum _FiltroEstoque {
   todos('Todos'),
@@ -120,13 +117,6 @@ class _CatalogoPageState extends State<CatalogoPage> {
         _carregando = false;
       });
     }
-  }
-
-  /// Retorna o status de conexão atual
-  _StatusApi get _status {
-    if (ApiService.modoDemo) return _StatusApi.demonstracao;
-    if (_carregando) return _StatusApi.conectando;
-    return _erro == null ? _StatusApi.online : _StatusApi.offline;
   }
 
   /// Indica se existem calçados carregados na lista
@@ -312,7 +302,7 @@ class _CatalogoPageState extends State<CatalogoPage> {
                       .length,
                   unidades: totalUnidades,
                   valorEstoque: valorTotalEstoque,
-                  status: _status,
+                  online: !_carregando && _erro == null,
                   compacto: compacto,
                 ),
               ),
@@ -552,89 +542,73 @@ class _CatalogoPageState extends State<CatalogoPage> {
 
 /// Painel escuro do topo com indicadores de catálogo, unidades totais e valor de estoque
 class _PainelCatalogo extends StatelessWidget {
+  // Quantidade total de modelos cadastrados no catálogo
   final int total;
+  // Quantidade total de modelos da categoria Tênis
   final int tenis;
+  // Quantidade total de modelos da categoria Chuteira
   final int chuteiras;
+  // Soma de todas as unidades físicas disponíveis em estoque
   final int unidades;
+  // Soma financeira total do estoque imobilizado em reais
   final double valorEstoque;
-  final _StatusApi status;
+  // Indica se os dados da tela já foram carregados com sucesso sem erros
+  final bool online;
+  // Indica se a tela possui altura reduzida para renderizar versão enxuta
   final bool compacto;
 
+  // Construtor constante com parâmetros obrigatórios do painel de resumo
   const _PainelCatalogo({
     required this.total,
     required this.tenis,
     required this.chuteiras,
     required this.unidades,
     required this.valorEstoque,
-    required this.status,
+    required this.online,
     required this.compacto,
   });
 
   @override
   Widget build(BuildContext context) {
-    // Configura o indicador de status
-    final (Color corStatus, String textoStatus) = switch (status) {
-      _StatusApi.conectando => (AppColors.hazard, 'Conectando…'),
-      _StatusApi.online => (AppColors.brandLight, 'API conectada'),
-      _StatusApi.offline => (AppColors.danger, 'Sem conexão'),
-      _StatusApi.demonstracao => (AppColors.infoLight, 'Demonstração'),
-    };
-
-    final online =
-        status == _StatusApi.online || status == _StatusApi.demonstracao;
+    // Função auxiliar que formata números inteiros ou exibe travessão enquanto carrega
     String n(int v) => online ? '$v' : '—';
 
+    // Contêiner principal escuro com cantos arredondados e borda sutil
     return Container(
       decoration: BoxDecoration(
+        // Cor de fundo escura característica do painel superior
         color: AppColors.ink,
+        // Arredondamento amplo dos cantos
         borderRadius: BorderRadius.circular(AppTheme.radiusLg),
+        // Borda translúcida discreta
         border: Border.all(color: Colors.white.withValues(alpha: 0.07)),
       ),
+      // Recorta o conteúdo interno respeitando as bordas arredondadas
       clipBehavior: Clip.antiAlias,
+      // Empilha a faixa azul superior e o conteúdo textual do painel
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          // Faixa decorativa superior na cor azul da marca LandView
           Container(height: 3, color: AppColors.brand),
+          // Renderiza layout compacto caso a altura da janela seja reduzida
           if (compacto)
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 9, 16, 9),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text(
-                        'Modelos no catálogo',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: Colors.white.withValues(alpha: 0.65),
-                        ),
-                      ),
-                      Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Container(
-                            width: 8,
-                            height: 8,
-                            decoration: BoxDecoration(
-                              color: corStatus,
-                              shape: BoxShape.circle,
-                            ),
-                          ),
-                          const SizedBox(width: 5),
-                          Text(
-                            textoStatus,
-                            style: TextStyle(
-                              fontSize: 11,
-                              color: Colors.white.withValues(alpha: 0.75),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
+                  // Título descritivo do painel compacto
+                  Text(
+                    'Modelos no catálogo',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Colors.white.withValues(alpha: 0.65),
+                    ),
                   ),
+                  // Espaçamento vertical curto
                   const SizedBox(height: 4),
+                  // Resumo em linha única com contagens de modelos, tipos e unidades
                   Text(
                     '${n(total)} modelos · ${n(tenis)} tênis · ${n(chuteiras)} chuteiras · ${n(unidades)} un.',
                     style: const TextStyle(
@@ -645,60 +619,27 @@ class _PainelCatalogo extends StatelessWidget {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
-                  Text(
-                    ApiService.modoDemo
-                        ? 'Modo demonstração (sem API)'
-                        : ApiService.baseUrl,
-                    style: TextStyle(
-                      fontSize: 10,
-                      color: Colors.white.withValues(alpha: 0.45),
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
                 ],
               ),
             )
+          // Renderiza layout completo padrão em telas normais
           else
             Padding(
-              padding: const EdgeInsets.fromLTRB(22, 18, 22, 16),
+              padding: const EdgeInsets.fromLTRB(22, 18, 22, 18),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text(
-                        'Modelos no catálogo',
-                        style: TextStyle(
-                          fontSize: 12.5,
-                          color: Colors.white.withValues(alpha: 0.55),
-                        ),
-                      ),
-                      Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Container(
-                            width: 8,
-                            height: 8,
-                            decoration: BoxDecoration(
-                              color: corStatus,
-                              shape: BoxShape.circle,
-                            ),
-                          ),
-                          const SizedBox(width: 6),
-                          Text(
-                            textoStatus,
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: Colors.white.withValues(alpha: 0.7),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
+                  // Rótulo superior do contador principal
+                  Text(
+                    'Modelos no catálogo',
+                    style: TextStyle(
+                      fontSize: 12.5,
+                      color: Colors.white.withValues(alpha: 0.55),
+                    ),
                   ),
+                  // Espaçamento entre o rótulo e o número grande
                   const SizedBox(height: 6),
+                  // Quantidade total de modelos em destaque tipográfico
                   Text(
                     n(total),
                     style: const TextStyle(
@@ -708,33 +649,32 @@ class _PainelCatalogo extends StatelessWidget {
                       letterSpacing: -1,
                     ),
                   ),
+                  // Espaçamento antes das métricas secundárias
                   const SizedBox(height: 14),
+                  // Agrupamento responsivo das métricas detalhadas do estoque
                   Wrap(
                     spacing: 20,
                     runSpacing: 10,
                     crossAxisAlignment: WrapCrossAlignment.center,
                     children: [
+                      // Métrica de quantidade de tênis
                       _Leitura(rotulo: 'Tênis', valor: n(tenis)),
+                      // Divisor vertical sutil
                       const _DivisorVertical(),
+                      // Métrica de quantidade de chuteiras
                       _Leitura(rotulo: 'Chuteiras', valor: n(chuteiras)),
+                      // Divisor vertical sutil
                       const _DivisorVertical(),
+                      // Métrica do total de pares/unidades em estoque
                       _Leitura(rotulo: 'Unidades', valor: n(unidades)),
+                      // Divisor vertical sutil
                       const _DivisorVertical(),
+                      // Métrica do valor financeiro total acumulado em estoque
                       _Leitura(
                         rotulo: 'Valor em estoque',
                         valor: online ? Formato.real(valorEstoque) : '—',
                       ),
                     ],
-                  ),
-                  const SizedBox(height: 12),
-                  Text(
-                    ApiService.modoDemo
-                        ? 'Modo demonstração (sem API)'
-                        : ApiService.baseUrl,
-                    style: TextStyle(
-                      fontSize: 11.5,
-                      color: Colors.white.withValues(alpha: 0.4),
-                    ),
                   ),
                 ],
               ),
@@ -745,12 +685,14 @@ class _PainelCatalogo extends StatelessWidget {
   }
 }
 
-/// Linha divisória vertical
+/// Linha divisória vertical utilizada entre as métricas do painel escuro
 class _DivisorVertical extends StatelessWidget {
+  // Construtor constante do divisor vertical
   const _DivisorVertical();
 
   @override
   Widget build(BuildContext context) {
+    // Caixa fina de 1px de largura por 28px de altura com branco translúcido
     return Container(
       width: 1,
       height: 28,
@@ -759,17 +701,22 @@ class _DivisorVertical extends StatelessWidget {
   }
 }
 
-/// Bloco de leitura de métrica
+/// Bloco de leitura de métrica contendo valor em destaque e rótulo descritivo abaixo
 class _Leitura extends StatelessWidget {
+  // Rótulo textual da métrica (ex: "Tênis", "Unidades")
   final String rotulo;
+  // Valor formatado da métrica
   final String valor;
+  // Construtor constante do bloco de leitura
   const _Leitura({required this.rotulo, required this.valor});
 
   @override
   Widget build(BuildContext context) {
+    // Empilha o valor numérico acima do rótulo descritivo
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        // Exibe o valor principal em branco seminegrito
         Text(
           valor,
           style: const TextStyle(
@@ -778,6 +725,7 @@ class _Leitura extends StatelessWidget {
             fontWeight: FontWeight.w600,
           ),
         ),
+        // Exibe o rótulo secundário com opacidade suave
         Text(
           rotulo,
           style: TextStyle(
