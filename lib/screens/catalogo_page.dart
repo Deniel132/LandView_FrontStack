@@ -122,15 +122,18 @@ class _CatalogoPageState extends State<CatalogoPage> {
   /// Indica se existem calçados carregados na lista
   bool get _temDados => !_carregando && _erro == null && _calcados.isNotEmpty;
 
-  /// Indica se há algum filtro ou busca ativa no momento
+  /// Indica se há algum filtro, ordenação ou busca ativa no momento
   bool get _temFiltroAtivo =>
       _filtroTipo != null ||
       _filtroEstoque != _FiltroEstoque.todos ||
+      _ordenacao != _Ordenacao.padrao ||
       _busca.trim().isNotEmpty;
 
   /// Limpa todos os filtros e a barra de pesquisa
   void _limparFiltros() {
+    // Limpa o texto digitado no controlador de busca
     _buscaController.clear();
+    // Restaura todos os estados de filtro e ordenação para o padrão inicial
     setState(() {
       _busca = '';
       _filtroTipo = null;
@@ -141,22 +144,26 @@ class _CatalogoPageState extends State<CatalogoPage> {
 
   /// Retorna os calçados que atendem aos filtros de busca, categoria e estoque, já ordenados
   List<Calcado> get _visiveis {
+    // Normaliza o termo pesquisado para letras minúsculas sem espaços nas pontas
     final termo = _busca.trim().toLowerCase();
 
     // Filtra a lista de calçados
     final filtrados = _calcados.where((c) {
-      // Filtra por tipo esportivo
+      // Filtra por tipo esportivo (Tênis ou Chuteira)
       if (_filtroTipo != null && c.tipo != _filtroTipo) return false;
 
-      // Filtra por situação de estoque
+      // Filtra por situação de estoque garantindo separação exata entre baixo (1 a 5) e esgotado (0)
       switch (_filtroEstoque) {
         case _FiltroEstoque.todos:
           break;
         case _FiltroEstoque.baixo:
-          if (c.estoque > 5) return false;
+          // Exibe apenas modelos com estoque baixo (entre 1 e 5 unidades, sem misturar esgotados)
+          if (!c.estoqueBaixo) return false;
         case _FiltroEstoque.esgotado:
+          // Exibe apenas modelos completamente sem estoque (0 unidades)
           if (!c.esgotado) return false;
         case _FiltroEstoque.excesso:
+          // Exibe apenas modelos com estoque elevado (40 unidades ou mais)
           if (!c.estoqueAlto) return false;
       }
 
@@ -166,7 +173,7 @@ class _CatalogoPageState extends State<CatalogoPage> {
           c.marca.toLowerCase().contains(termo);
     }).toList();
 
-    // Aplica a ordenação selecionada
+    // Aplica a ordenação selecionada com desempate alfabético para estabilidade visual
     switch (_ordenacao) {
       case _Ordenacao.padrao:
         break;
@@ -175,14 +182,35 @@ class _CatalogoPageState extends State<CatalogoPage> {
           (a, b) => a.nome.toLowerCase().compareTo(b.nome.toLowerCase()),
         );
       case _Ordenacao.menorEstoque:
-        filtrados.sort((a, b) => a.estoque.compareTo(b.estoque));
+        filtrados.sort((a, b) {
+          final cmp = a.estoque.compareTo(b.estoque);
+          return cmp != 0
+              ? cmp
+              : a.nome.toLowerCase().compareTo(b.nome.toLowerCase());
+        });
       case _Ordenacao.maiorEstoque:
-        filtrados.sort((a, b) => b.estoque.compareTo(a.estoque));
+        filtrados.sort((a, b) {
+          final cmp = b.estoque.compareTo(a.estoque);
+          return cmp != 0
+              ? cmp
+              : a.nome.toLowerCase().compareTo(b.nome.toLowerCase());
+        });
       case _Ordenacao.menorPreco:
-        filtrados.sort((a, b) => a.preco.compareTo(b.preco));
+        filtrados.sort((a, b) {
+          final cmp = a.preco.compareTo(b.preco);
+          return cmp != 0
+              ? cmp
+              : a.nome.toLowerCase().compareTo(b.nome.toLowerCase());
+        });
       case _Ordenacao.maiorPreco:
-        filtrados.sort((a, b) => b.preco.compareTo(a.preco));
+        filtrados.sort((a, b) {
+          final cmp = b.preco.compareTo(a.preco);
+          return cmp != 0
+              ? cmp
+              : a.nome.toLowerCase().compareTo(b.nome.toLowerCase());
+        });
     }
+    // Devolve a lista filtrada e ordenada pronta para exibição
     return filtrados;
   }
 
@@ -459,24 +487,41 @@ class _CatalogoPageState extends State<CatalogoPage> {
     );
   }
 
-  /// Chip individual para filtrar por categoria esportiva
+  /// Chip individual para filtrar por categoria esportiva ou limpar filtros ("Todos")
   Widget _chipTipo(String rotulo, TipoCalcado? tipo) {
+    // O chip "Todos" (tipo == null) só fica marcado quando nenhum filtro de tipo ou de estoque está ativo
+    final selecionado = tipo == null
+        ? (_filtroTipo == null && _filtroEstoque == _FiltroEstoque.todos)
+        : _filtroTipo == tipo;
+    // Retorna o chip estilizado com espaçamento lateral
     return Padding(
       padding: const EdgeInsets.only(right: 8),
       child: ChoiceChip(
         label: Text(rotulo),
-        selected: _filtroTipo == tipo,
+        selected: selecionado,
         showCheckmark: false,
         selectedColor: AppColors.brand.withValues(alpha: 0.16),
         side: BorderSide(color: context.hairline),
-        onSelected: (_) => setState(() => _filtroTipo = tipo),
+        onSelected: (_) => setState(() {
+          // Se clicou em "Todos" ou desmarcou o tipo atual, limpa tipo e filtro de estoque
+          if (tipo == null || _filtroTipo == tipo) {
+            _filtroTipo = null;
+            _filtroEstoque = _FiltroEstoque.todos;
+          } else {
+            // Aplica o tipo escolhido e reseta o filtro de estoque para evitar combinação invisível
+            _filtroTipo = tipo;
+            _filtroEstoque = _FiltroEstoque.todos;
+          }
+        }),
       ),
     );
   }
 
   /// Chip individual para filtrar por condição de estoque
   Widget _chipEstoque(_FiltroEstoque filtro) {
+    // Verifica se este filtro de estoque específico está selecionado
     final selecionado = _filtroEstoque == filtro;
+    // Retorna o chip estilizado com espaçamento lateral
     return Padding(
       padding: const EdgeInsets.only(right: 8),
       child: ChoiceChip(
@@ -485,9 +530,11 @@ class _CatalogoPageState extends State<CatalogoPage> {
         showCheckmark: false,
         selectedColor: AppColors.hazard.withValues(alpha: 0.18),
         side: BorderSide(color: context.hairline),
-        onSelected: (_) => setState(
-          () => _filtroEstoque = selecionado ? _FiltroEstoque.todos : filtro,
-        ),
+        onSelected: (_) => setState(() {
+          // Alterna o filtro de estoque clicado e limpa o filtro de tipo anterior para exibir todos os itens daquela condição
+          _filtroEstoque = selecionado ? _FiltroEstoque.todos : filtro;
+          _filtroTipo = null;
+        }),
       ),
     );
   }
@@ -532,6 +579,8 @@ class _CatalogoPageState extends State<CatalogoPage> {
         padding: const EdgeInsets.fromLTRB(16, 0, 16, 96),
         itemCount: lista.length,
         itemBuilder: (context, i) => CartaoCalcado(
+          // Chave única por calçado para garantir atualização fiel ao alternar filtros e ordenações
+          key: ValueKey(lista[i].id ?? '${lista[i].nome}_$i'),
           calcado: lista[i],
           onTap: () => _abrirDetalhe(lista[i]),
         ),
