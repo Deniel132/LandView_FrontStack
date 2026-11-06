@@ -65,7 +65,6 @@ Também é possível criar uma conta nova pela tela **"Criar uma conta"**.
 | --- | --- | --- |
 | **Integrado (padrão)** | `flutter run -d chrome --web-port=8000` | Usa a API do Render + banco Supabase. Os dados são reais e compartilhados. |
 | **API local** | `--dart-define=API_URL=http://localhost:8000` | Aponta para outra instância da API (o sufixo `/docs` é removido automaticamente). |
-| **Demonstração** | `--dart-define=DEMO=true` | Dados fictícios em memória, sem rede. Contas criadas valem só durante a sessão. Útil para apresentar sem internet. |
 
 Se a chamada ao Render falhar por rede ou CORS, o
 [`ApiService`](lib/services/api_service.dart) tenta automaticamente a API local
@@ -83,9 +82,8 @@ em `http://127.0.0.1:8000`.
   "E-mail ou senha incorretos").
 - Criação de conta pela tela **Criar uma conta**.
 - **Avatar da conta** no canto superior direito de todas as telas, com as
-  iniciais do usuário. O menu mostra nome, e-mail, status da conexão
-  (`Conectado à API` / `Modo demonstração`), **Alterar nome de exibição** e
-  **Sair**.
+  iniciais do usuário. O menu mostra nome, perfil de acesso (`Dono / Gerente`,
+  `Vendedor` ou `Cliente`), e-mail, **Alterar nome de exibição** e **Sair**.
 - Sessão expirada (401 da API) devolve o usuário automaticamente ao login.
 
 ### Painel da loja (dashboard)
@@ -253,17 +251,15 @@ lib/
 ├── screens/
 │   ├── login_page.dart           # Login
 │   ├── criar_conta_page.dart     # Cadastro de conta
-│   ├── dashboard_page.dart       # Painel da loja
+│   ├── dashboard_page.dart       # Painel da loja e auditoria de saídas
 │   ├── catalogo_page.dart        # Catálogo, filtros e ordenação
 │   ├── detalhe_page.dart         # Detalhe, venda, estoque por tamanho
 │   ├── cadastro_page.dart        # Cadastro/edição de modelo e grade
-│   ├── recomendacao_page.dart    # Provador
-│   └── home_page.dart            # Tela antiga, não usada na navegação atual
+│   └── recomendacao_page.dart    # Provador
 ├── services/
 │   ├── api_service.dart          # Única porta de rede (Render + Supabase)
 │   ├── api_exception.dart        # Erro padronizado da API
-│   ├── dados_demo.dart           # Dados do modo demonstração
-│   └── sessao.dart               # Token e usuário logado (com notificação de mudança)
+│   └── sessao.dart               # Token, usuário logado e cache local de grades
 ├── theme/
 │   └── app_theme.dart            # Cores, tipografia e temas
 ├── utils/
@@ -277,15 +273,17 @@ lib/
     └── pilula.dart               # Etiquetas de status
 
 test/
-├── models/api_models_test.dart          # Conversão de JSON e venda no modo demo
+├── fluxo_daniel_test.dart               # Teste ponta a ponta (cadastro, login, produto, venda e auditoria)
+├── validacao_venda_estoque_test.dart    # Validação de baixa por numeração e persistência no banco
+├── seguranca_test.dart                  # Testes de segurança (criptografia, RBAC, sessão, sanitização e login)
+├── models/api_models_test.dart          # Conversão de JSON e regras de negócio de modelos
 └── widgets/
     ├── contato_loja_test.dart           # Asset do logo e rodapé
     ├── criar_conta_page_test.dart       # Tela de criar conta
-    └── detalhe_venda_test.dart          # Fluxo de venda e baixa de estoque
+    └── detalhe_venda_test.dart          # Fluxo de venda e baixa de estoque na tela de detalhe
 ```
 
-Dependências principais: `http` (rede), `file_selector` (foto do computador) e
-`url_launcher`.
+Dependências principais: `http` (rede), `shared_preferences` (persistência local de sessão e preferências), `file_selector` (foto do computador) e `url_launcher`.
 
 ---
 
@@ -296,8 +294,7 @@ flutter analyze
 flutter test
 ```
 
-Os testes rodam no **modo demonstração** (`ApiService.modoDemoOverride = true`),
-então não precisam de internet nem do Render.
+A suíte conta com testes unitários de modelos, testes de widgets e testes de integração ponta a ponta validando o fluxo real de cadastro, autenticação, estoque e auditoria de saídas.
 
 ---
 

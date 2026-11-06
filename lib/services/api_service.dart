@@ -127,8 +127,8 @@ class ApiService {
         autenticado: false,
       );
     } on ApiException catch (e) {
-      // Se a API recusou com 401, lança erro com mensagem clara para o formulário.
-      if (e.status == 401) {
+      // Se a API recusou as credenciais (401, 400 ou 404), lança erro padronizado 401 para o formulário.
+      if (e.status == 401 || e.status == 400 || e.status == 404) {
         throw ApiException('E-mail ou senha incorretos.', status: 401);
       }
       // Se não for erro de servidor 500 ou indisponibilidade, repassa a exceção.

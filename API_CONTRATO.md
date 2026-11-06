@@ -189,10 +189,8 @@ Regras sugeridas (o app mostra os limites que a API devolver em `resumo`):
 - `estoque_alto`: modelos com `estoque >= limite_estoque_alto`, do maior estoque para o menor.
 - `vendas` em cada item = unidades vendidas nos últimos 30 dias.
 
-Para o dashboard refletir as vendas reais, o backend precisa persistir cada
-registro recebido em `POST /vendas` e calcular os totais dos últimos 30 dias a
-partir desses registros. O modo de demonstração do Flutter simula essas baixas
-e vendas em memória; os dados somem ao fechar o app.
+Para o dashboard refletir as vendas reais, o backend persiste cada
+registro de saída em `stock_exit_register` e calcula os totais a partir desses registros.
 
 ## Recomendação de tamanho
 

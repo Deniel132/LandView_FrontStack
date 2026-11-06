@@ -184,13 +184,20 @@ class Calcado {
     this.vendas30Dias = 0,
   });
 
-  /// Indica se o calçado possui alguma imagem cadastrada (seja por bytes em memória ou por URL)
-  bool get temImagem =>
-      imagemBytes != null ||
-      (imagemUrl != null && imagemUrl!.trim().isNotEmpty);
+  /// Indica se o calçado possui alguma imagem cadastrada (seja por bytes em memória ou por URL segura)
+  bool get temImagem => imagemBytes != null || temImagemUrl;
 
-  /// Indica se possui uma URL de imagem válida e não vazia
-  bool get temImagemUrl => imagemUrl != null && imagemUrl!.trim().isNotEmpty;
+  /// Indica se possui uma URL de imagem válida, não vazia e com protocolo seguro (http, https ou data:image/)
+  bool get temImagemUrl {
+    // Recupera a string da URL removendo espaços nas extremidades
+    final u = imagemUrl?.trim().toLowerCase();
+    // Se for nula ou vazia, retorna falso
+    if (u == null || u.isEmpty) return false;
+    // Aceita apenas protocolos seguros de imagem (evita esquemas maliciosos como javascript:)
+    return u.startsWith('http://') ||
+        u.startsWith('https://') ||
+        u.startsWith('data:image/');
+  }
 
   /// Indica se o calçado está com estoque zerado ou esgotado
   bool get esgotado => estoque <= 0;
