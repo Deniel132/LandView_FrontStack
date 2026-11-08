@@ -171,36 +171,50 @@ class _CriarContaPageState extends State<CriarContaPage> {
                           const SizedBox(height: 22),
                           // Dropdown para seleção do cargo interno na loja (Vendedor, Gerente ou Proprietário)
                           DropdownButtonFormField<String>(
+                            // Valor inicial selecionado no campo
                             initialValue: _role,
+                            // Faz o seletor ocupar toda a largura horizontal disponível
                             isExpanded: true,
+                            // Decoração visual com rótulo, ícone de crachá e texto explicativo dinâmico
                             decoration: InputDecoration(
+                              // Rótulo do campo de seleção
                               labelText: 'Cargo na loja',
+                              // Ícone ilustrativo de identificação profissional
                               prefixIcon: const Icon(Icons.badge_outlined),
+                              // Exibe na parte inferior o resumo das permissões do cargo escolhido
                               helperText: switch (_role) {
+                                // Resumo das permissões do Proprietário
                                 'OWNER' =>
                                   'Acesso total: catálogo, estoque, exclusão e auditoria de saídas.',
+                                // Resumo das permissões do Gerente
                                 'USER' =>
                                   'Gestão operacional: cadastra/edita modelos e repõe estoque.',
+                                // Resumo das permissões do Vendedor
                                 _ =>
                                   'Atendimento: consulta catálogo, usa provador e registra vendas.',
                               },
+                              // Permite até 2 linhas para a legenda de permissões não cortar em telas menores
                               helperMaxLines: 2,
                             ),
+                            // Opções de cargos internos disponíveis para cadastro
                             items: const [
+                              // Opção para Vendedor(a)
                               DropdownMenuItem(
                                 value: 'SELLER',
                                 child: Text('Vendedor(a)'),
                               ),
+                              // Opção para Gerente
                               DropdownMenuItem(
                                 value: 'USER',
                                 child: Text('Gerente'),
                               ),
+                              // Opção para Proprietário(a)
                               DropdownMenuItem(
                                 value: 'OWNER',
                                 child: Text('Proprietário(a)'),
                               ),
                             ],
-                            // Atualiza a role selecionada no estado
+                            // Atualiza o cargo selecionado no estado da tela
                             onChanged: (v) {
                               if (v != null) setState(() => _role = v);
                             },

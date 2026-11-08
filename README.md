@@ -77,10 +77,13 @@ em `http://127.0.0.1:8000`.
 
 ## Funcionalidades
 
-### Login e conta
+### Login, conta e permissões por cargo (RBAC)
 - Login com verificação real de senha (senha errada é recusada com
   "E-mail ou senha incorretos").
-- Criação de conta pela tela **Criar uma conta**.
+- Criação de conta pela tela **Criar uma conta**, escolhendo um dos **3 cargos internos da loja**:
+  - **Vendedor(a) (`SELLER`)**: consulta o painel e o catálogo, utiliza o **Provador Virtual** e **registra vendas** (dando baixa automática no estoque).
+  - **Gerente (`USER`)**: possui todas as permissões do vendedor e também pode **cadastrar novos modelos**, **editar modelos/preços** e **repor/ajustar o estoque** (inclusive pelo atalho `+5 un.` do painel e por numeração).
+  - **Proprietário(a) (`OWNER`)**: acesso total irrestrito, sendo o único cargo autorizado a **excluir definitivamente modelos** do catálogo e visualizar o **Histórico de Auditoria de Saídas**.
 - **Avatar da conta** no canto superior direito de todas as telas, com as
   iniciais do usuário. O menu mostra nome, cargo na loja (`Proprietário`,
   `Gerente` ou `Vendedor`), e-mail, **Alterar nome de exibição** e **Sair**.
@@ -213,8 +216,9 @@ própria LandView_API:
 | Tabela / função | Uso |
 | --- | --- |
 | `product`, `product_category`, `stock_product` | Listagem do catálogo e do painel |
+| `stock_exit_register` | Contagem real de saídas/vendas por produto e auditoria |
 | `stock_product.characteristics` | Forma do calçado (`estreita`, `padrao`, `larga`) |
-| `stock_product.sub_characteristics` | JSON com tamanhos + estoque por tamanho, foto e vendas de 30 dias |
+| `stock_product.sub_characteristics` | JSON com tamanhos + estoque por tamanho e foto (`imagem_url`) |
 | `rpc/verificar_login` | Validação bcrypt de reserva no login |
 | `rpc/criar_usuario_hash` | Criação de conta com hash bcrypt |
 

@@ -266,13 +266,16 @@ class _DashboardPageState extends State<DashboardPage> {
           children: [
             // Logo circular oficial da marca LandView dimensionado conforme a largura da tela.
             LogoLoja(tamanho: telaEstreita ? 34 : 40),
+            // Espaçamento horizontal proporcional entre o logo e o título.
             SizedBox(width: telaEstreita ? 9 : 12),
             // Flexible impede que o texto do título invada os ícones de ação em telas pequenas de celular.
             Flexible(
+              // Empilha o título principal e o subtítulo verticalmente.
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisSize: MainAxisSize.min,
                 children: [
+                  // Nome principal do sistema com truncamento seguro em uma única linha.
                   Text(
                     'LandView Stock',
                     maxLines: 1,
@@ -284,6 +287,7 @@ class _DashboardPageState extends State<DashboardPage> {
                       color: context.textStrong,
                     ),
                   ),
+                  // Subtítulo descritivo do painel com truncamento seguro.
                   Text(
                     'Painel da loja',
                     maxLines: 1,
@@ -299,11 +303,14 @@ class _DashboardPageState extends State<DashboardPage> {
           ],
         ),
         actions: [
-          // Botão para abrir o histórico de saídas de estoque (auditoria GET /stock-exit/ disponível apenas para Dono/Gerente).
+          // Botão para abrir o histórico de saídas de estoque (auditoria GET /stock-exit/ exclusiva do Proprietário).
           if (Sessao.instance.usuario?.podeVerAuditoria ?? false)
             IconButton(
+              // Reduz a densidade visual em telas estreitas de celular.
               visualDensity: telaEstreita ? VisualDensity.compact : null,
+              // Ajusta o preenchimento horizontal para economizar espaço na AppBar.
               padding: EdgeInsets.symmetric(horizontal: telaEstreita ? 6 : 8),
+              // Define área mínima compacta em celulares.
               constraints: telaEstreita
                   ? const BoxConstraints(minWidth: 34, minHeight: 34)
                   : null,
@@ -314,8 +321,11 @@ class _DashboardPageState extends State<DashboardPage> {
           // Botão para copiar o resumo consolidado do painel (apenas quando houver dados carregados).
           if (_dados != null)
             IconButton(
+              // Reduz a densidade visual em telas estreitas de celular.
               visualDensity: telaEstreita ? VisualDensity.compact : null,
+              // Ajusta o preenchimento horizontal para economizar espaço na AppBar.
               padding: EdgeInsets.symmetric(horizontal: telaEstreita ? 6 : 8),
+              // Define área mínima compacta em celulares.
               constraints: telaEstreita
                   ? const BoxConstraints(minWidth: 34, minHeight: 34)
                   : null,
@@ -325,8 +335,11 @@ class _DashboardPageState extends State<DashboardPage> {
             ),
           // Botão para forçar a atualização imediata dos dados do painel.
           IconButton(
+            // Reduz a densidade visual em telas estreitas de celular.
             visualDensity: telaEstreita ? VisualDensity.compact : null,
+            // Ajusta o preenchimento horizontal para economizar espaço na AppBar.
             padding: EdgeInsets.symmetric(horizontal: telaEstreita ? 6 : 8),
+            // Define área mínima compacta em celulares.
             constraints: telaEstreita
                 ? const BoxConstraints(minWidth: 34, minHeight: 34)
                 : null,
@@ -336,8 +349,11 @@ class _DashboardPageState extends State<DashboardPage> {
           ),
           // Botão para alternar dinamicamente entre tema claro e escuro.
           IconButton(
+            // Reduz a densidade visual em telas estreitas de celular.
             visualDensity: telaEstreita ? VisualDensity.compact : null,
+            // Ajusta o preenchimento horizontal para economizar espaço na AppBar.
             padding: EdgeInsets.symmetric(horizontal: telaEstreita ? 6 : 8),
+            // Define área mínima compacta em celulares.
             constraints: telaEstreita
                 ? const BoxConstraints(minWidth: 34, minHeight: 34)
                 : null,

@@ -175,36 +175,50 @@ class _CatalogoPageState extends State<CatalogoPage> {
 
     // Aplica a ordenação selecionada com desempate alfabético para estabilidade visual
     switch (_ordenacao) {
+      // Mantém a ordem original vinda do banco de dados
       case _Ordenacao.padrao:
         break;
+      // Ordena alfabeticamente pelo nome do calçado (A a Z)
       case _Ordenacao.nomeAz:
         filtrados.sort(
           (a, b) => a.nome.toLowerCase().compareTo(b.nome.toLowerCase()),
         );
+      // Ordena do menor para o maior saldo de estoque (desempatando por nome)
       case _Ordenacao.menorEstoque:
         filtrados.sort((a, b) {
+          // Compara a quantidade em estoque de cada calçado
           final cmp = a.estoque.compareTo(b.estoque);
+          // Se o estoque for diferente retorna a comparação; se empatar, ordena por nome
           return cmp != 0
               ? cmp
               : a.nome.toLowerCase().compareTo(b.nome.toLowerCase());
         });
+      // Ordena do maior para o menor saldo de estoque (desempatando por nome)
       case _Ordenacao.maiorEstoque:
         filtrados.sort((a, b) {
+          // Compara a quantidade em estoque em ordem decrescente
           final cmp = b.estoque.compareTo(a.estoque);
+          // Se o estoque for diferente retorna a comparação; se empatar, ordena por nome
           return cmp != 0
               ? cmp
               : a.nome.toLowerCase().compareTo(b.nome.toLowerCase());
         });
+      // Ordena do menor para o maior preço unitário (desempatando por nome)
       case _Ordenacao.menorPreco:
         filtrados.sort((a, b) {
+          // Compara o preço unitário em ordem crescente
           final cmp = a.preco.compareTo(b.preco);
+          // Se o preço for diferente retorna a comparação; se empatar, ordena por nome
           return cmp != 0
               ? cmp
               : a.nome.toLowerCase().compareTo(b.nome.toLowerCase());
         });
+      // Ordena do maior para o menor preço unitário (desempatando por nome)
       case _Ordenacao.maiorPreco:
         filtrados.sort((a, b) {
+          // Compara o preço unitário em ordem decrescente
           final cmp = b.preco.compareTo(a.preco);
+          // Se o preço for diferente retorna a comparação; se empatar, ordena por nome
           return cmp != 0
               ? cmp
               : a.nome.toLowerCase().compareTo(b.nome.toLowerCase());
