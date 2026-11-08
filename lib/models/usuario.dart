@@ -54,22 +54,23 @@ class Usuario {
   /// Getter que retorna o nome amigável e legível do perfil do usuário para exibir na interface
   String get perfilRotulo => rotuloPerfil(perfil);
 
-  /// Método estático que traduz a constante técnica da API para o português
+  /// Método estático que traduz a constante técnica da API para o cargo interno da loja em português
   static String rotuloPerfil(String? perfil) {
     // Avalia o texto do perfil em letras maiúsculas
     switch (perfil?.toUpperCase()) {
       // SELLER traduz para Vendedor
       case 'SELLER':
         return 'Vendedor';
+      // USER (ou MANAGER) representa o cargo intermediário de Gerente da loja
+      case 'USER':
+      case 'MANAGER':
+        return 'Gerente';
       // OWNER traduz para Proprietário
       case 'OWNER':
         return 'Proprietário';
-      // USER traduz para Usuário
-      case 'USER':
-        return 'Usuário';
       // Caso não corresponda a nenhum dos anteriores, exibe fallback
       default:
-        return 'Perfil não definido';
+        return 'Vendedor';
     }
   }
 
@@ -81,16 +82,23 @@ class Usuario {
         'perfil': perfil,
       };
 
-  /// Indica se o usuário é proprietário/gerente com acesso total administrativo
+  /// Indica se o usuário é proprietário com acesso total irrestrito e auditoria
   bool get isOwner => perfil?.toUpperCase() == 'OWNER';
 
-  /// Indica se o usuário é vendedor focado no atendimento e saídas
+  /// Indica se o usuário ocupa o cargo de gerente operacional de catálogo e estoque
+  bool get isManager =>
+      perfil?.toUpperCase() == 'USER' || perfil?.toUpperCase() == 'MANAGER';
+
+  /// Indica se o usuário é vendedor focado no atendimento, provador e registro de vendas
   bool get isSeller => perfil?.toUpperCase() == 'SELLER';
 
-  /// Permissão para cadastrar, editar e excluir produtos do catálogo
-  bool get podeGerenciarProdutos => isOwner;
+  /// Permissão para cadastrar novos modelos, editar dados e ajustar/repor quantidades de estoque (Proprietário e Gerente)
+  bool get podeGerenciarProdutos => isOwner || isManager;
 
-  /// Permissão para visualizar a auditoria de saídas de estoque
+  /// Permissão restrita para excluir definitivamente um modelo do catálogo (exclusivo do Proprietário)
+  bool get podeExcluirProdutos => isOwner;
+
+  /// Permissão restrita para auditar o histórico geral de saídas e baixas por usuário (exclusivo do Proprietário)
   bool get podeVerAuditoria => isOwner;
 
   /// Separa o nome em palavras individuais, ignorando espaços múltiplos

@@ -268,8 +268,11 @@ class _CatalogoPageState extends State<CatalogoPage> {
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisSize: MainAxisSize.min,
           children: [
+            // Título principal com truncamento seguro em telas estreitas
             Text(
               'Catálogo & Estoque',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
               style: TextStyle(
                 fontSize: 16.5,
                 fontWeight: FontWeight.w700,
@@ -277,8 +280,11 @@ class _CatalogoPageState extends State<CatalogoPage> {
                 color: context.textStrong,
               ),
             ),
+            // Subtítulo com truncamento seguro para evitar quebra em celulares
             Text(
               'Gestão de modelos, estoque e tabela de medidas',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
               style: TextStyle(fontSize: 12, color: context.textMuted),
             ),
           ],

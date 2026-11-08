@@ -50,45 +50,51 @@ void main() {
       );
     });
 
-    test('2. Controle de Acesso por Perfil (RBAC: OWNER vs SELLER vs USER)', () {
-      // Instancia um usuário com perfil de Proprietário/Gerente (OWNER)
-      const gerente = Usuario(
+    test('2. Controle de Acesso por Perfil (RBAC: Proprietário vs Gerente vs Vendedor)', () {
+      // Instancia um usuário com perfil de Proprietário (OWNER)
+      const proprietario = Usuario(
         id: 1,
+        nome: 'Proprietário Loja',
+        email: 'dono@landview.com',
+        perfil: 'OWNER',
+      );
+
+      // Instancia um usuário com perfil de Gerente (USER)
+      const gerente = Usuario(
+        id: 2,
         nome: 'Gerente Loja',
         email: 'gerente@landview.com',
-        perfil: 'OWNER',
+        perfil: 'USER',
       );
 
       // Instancia um usuário com perfil de Vendedor (SELLER)
       const vendedor = Usuario(
-        id: 2,
+        id: 3,
         nome: 'Vendedor Loja',
         email: 'vendedor@landview.com',
         perfil: 'SELLER',
       );
 
-      // Instancia um usuário comum (USER)
-      const cliente = Usuario(
-        id: 3,
-        nome: 'Cliente Comum',
-        email: 'cliente@landview.com',
-        perfil: 'USER',
-      );
+      // O Proprietário (OWNER) deve ter permissão total: gerencia produtos, exclui modelos e vê auditoria
+      expect(proprietario.isOwner, isTrue);
+      expect(proprietario.perfilRotulo, equals('Proprietário'));
+      expect(proprietario.podeGerenciarProdutos, isTrue);
+      expect(proprietario.podeExcluirProdutos, isTrue);
+      expect(proprietario.podeVerAuditoria, isTrue);
 
-      // O Gerente (OWNER) deve ter permissão total sobre produtos e auditoria
-      expect(gerente.isOwner, isTrue);
+      // O Gerente (USER) gerencia catálogo e estoque, mas NÃO pode excluir modelos nem acessar auditoria do dono
+      expect(gerente.isManager, isTrue);
+      expect(gerente.perfilRotulo, equals('Gerente'));
       expect(gerente.podeGerenciarProdutos, isTrue);
-      expect(gerente.podeVerAuditoria, isTrue);
+      expect(gerente.podeExcluirProdutos, isFalse);
+      expect(gerente.podeVerAuditoria, isFalse);
 
-      // O Vendedor (SELLER) NÃO pode cadastrar/editar/excluir produtos nem ver auditoria restrita
+      // O Vendedor (SELLER) realiza atendimento e vendas, sem permissões de gestão de catálogo ou auditoria
       expect(vendedor.isSeller, isTrue);
+      expect(vendedor.perfilRotulo, equals('Vendedor'));
       expect(vendedor.podeGerenciarProdutos, isFalse);
+      expect(vendedor.podeExcluirProdutos, isFalse);
       expect(vendedor.podeVerAuditoria, isFalse);
-
-      // O Usuário comum (USER) NÃO possui permissões administrativas
-      expect(cliente.isOwner, isFalse);
-      expect(cliente.podeGerenciarProdutos, isFalse);
-      expect(cliente.podeVerAuditoria, isFalse);
     });
 
     test('3. Isolamento de Sessão, Logout Seguro e Expiração de Token (401)', () {

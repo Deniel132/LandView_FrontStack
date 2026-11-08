@@ -362,7 +362,10 @@ class _DetalhePageState extends State<DetalhePage> {
   Widget build(BuildContext context) {
     final gradeComEstoque = _c.tamanhosComEstoque;
     final zerados = _c.tamanhosZerados;
+    // Permissão de gestão operacional (Proprietário e Gerente podem cadastrar, editar e ajustar estoque)
     final podeGerenciar = Sessao.instance.usuario?.podeGerenciarProdutos ?? false;
+    // Permissão de exclusão definitiva do catálogo (exclusivo do Proprietário)
+    final podeExcluir = Sessao.instance.usuario?.podeExcluirProdutos ?? false;
 
     return Scaffold(
       appBar: AppBar(
@@ -547,7 +550,7 @@ class _DetalhePageState extends State<DetalhePage> {
                     label: const Text('Recomendar tamanho (Provador)'),
                   ),
                 ),
-                // Ações administrativas: Ajustar Estoque, Editar Modelo e Excluir (somente para Dono/Gerente)
+                // Ações de gestão: Ajustar Estoque e Editar Modelo (disponível para Proprietário e Gerente)
                 if (podeGerenciar) ...[
                   const SizedBox(height: 10),
                   // Linha com Ajustar Estoque e Editar Modelo
@@ -579,8 +582,10 @@ class _DetalhePageState extends State<DetalhePage> {
                       ),
                     ],
                   ),
+                ],
+                // Botão vermelho de excluir modelo (restrito exclusivamente ao Proprietário)
+                if (podeExcluir) ...[
                   const SizedBox(height: 10),
-                  // Botão vermelho de excluir modelo
                   SizedBox(
                     height: 52,
                     child: OutlinedButton.icon(

@@ -169,13 +169,22 @@ class _CriarContaPageState extends State<CriarContaPage> {
                             ),
                           ),
                           const SizedBox(height: 22),
-                          // Dropdown para seleção do perfil de acesso (Vendedor, Proprietário ou Usuário)
+                          // Dropdown para seleção do cargo interno na loja (Vendedor, Gerente ou Proprietário)
                           DropdownButtonFormField<String>(
                             initialValue: _role,
                             isExpanded: true,
-                            decoration: const InputDecoration(
-                              labelText: 'Perfil de acesso',
-                              prefixIcon: Icon(Icons.badge_outlined),
+                            decoration: InputDecoration(
+                              labelText: 'Cargo na loja',
+                              prefixIcon: const Icon(Icons.badge_outlined),
+                              helperText: switch (_role) {
+                                'OWNER' =>
+                                  'Acesso total: catálogo, estoque, exclusão e auditoria de saídas.',
+                                'USER' =>
+                                  'Gestão operacional: cadastra/edita modelos e repõe estoque.',
+                                _ =>
+                                  'Atendimento: consulta catálogo, usa provador e registra vendas.',
+                              },
+                              helperMaxLines: 2,
                             ),
                             items: const [
                               DropdownMenuItem(
@@ -183,12 +192,12 @@ class _CriarContaPageState extends State<CriarContaPage> {
                                 child: Text('Vendedor(a)'),
                               ),
                               DropdownMenuItem(
-                                value: 'OWNER',
-                                child: Text('Proprietário(a)'),
+                                value: 'USER',
+                                child: Text('Gerente'),
                               ),
                               DropdownMenuItem(
-                                value: 'USER',
-                                child: Text('Usuário(a)'),
+                                value: 'OWNER',
+                                child: Text('Proprietário(a)'),
                               ),
                             ],
                             // Atualiza a role selecionada no estado
