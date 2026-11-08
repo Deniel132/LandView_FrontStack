@@ -82,8 +82,8 @@ em `http://127.0.0.1:8000`.
   "E-mail ou senha incorretos").
 - Criação de conta pela tela **Criar uma conta**.
 - **Avatar da conta** no canto superior direito de todas as telas, com as
-  iniciais do usuário. O menu mostra nome, perfil de acesso (`Dono / Gerente`,
-  `Vendedor` ou `Cliente`), e-mail, **Alterar nome de exibição** e **Sair**.
+  iniciais do usuário. O menu mostra nome, cargo na loja (`Proprietário`,
+  `Gerente` ou `Vendedor`), e-mail, **Alterar nome de exibição** e **Sair**.
 - Sessão expirada (401 da API) devolve o usuário automaticamente ao login.
 
 ### Painel da loja (dashboard)

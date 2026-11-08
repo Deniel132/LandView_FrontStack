@@ -53,6 +53,10 @@ class MyApp extends StatelessWidget {
         title: 'LandView Stock',
         // Oculta a faixa de depuração "DEBUG" no canto superior direito
         debugShowCheckedModeBanner: false,
+        // Oculta a barra de rolagem flutuante ao lado do container central mantendo a rolagem normal
+        scrollBehavior: const MaterialScrollBehavior().copyWith(
+          scrollbars: false,
+        ),
         // Associa a chave global de navegação
         navigatorKey: navigatorKey,
         // Aplica o tema visual claro padrão

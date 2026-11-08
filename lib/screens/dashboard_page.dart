@@ -253,37 +253,48 @@ class _DashboardPageState extends State<DashboardPage> {
   Widget build(BuildContext context) {
     // Identifica se o aplicativo está operando sob o tema escuro.
     final isDark = context.isDark;
+    // Detecta telas estreitas de celular para compactar espaçamentos da AppBar sem sobrepor textos.
+    final telaEstreita = MediaQuery.sizeOf(context).width < 430;
 
     return Scaffold(
       appBar: AppBar(
         // Altura personalizada da barra de navegação superior.
         toolbarHeight: 68,
-        // Espaçamento do título na horizontal.
-        titleSpacing: 20,
+        // Espaçamento horizontal reduzido em celulares para dar mais área útil ao título.
+        titleSpacing: telaEstreita ? 12 : 20,
         title: Row(
           children: [
-            // Logo circular oficial da marca LandView.
-            const LogoLoja(tamanho: 40),
-            const SizedBox(width: 12),
-            // Título e subtítulo do aplicativo dispostos em coluna.
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  'LandView Stock',
-                  style: TextStyle(
-                    fontSize: 16.5,
-                    fontWeight: FontWeight.w700,
-                    letterSpacing: -0.3,
-                    color: context.textStrong,
+            // Logo circular oficial da marca LandView dimensionado conforme a largura da tela.
+            LogoLoja(tamanho: telaEstreita ? 34 : 40),
+            SizedBox(width: telaEstreita ? 9 : 12),
+            // Flexible impede que o texto do título invada os ícones de ação em telas pequenas de celular.
+            Flexible(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    'LandView Stock',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: telaEstreita ? 15 : 16.5,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: -0.3,
+                      color: context.textStrong,
+                    ),
                   ),
-                ),
-                Text(
-                  'Painel da loja',
-                  style: TextStyle(fontSize: 12, color: context.textMuted),
-                ),
-              ],
+                  Text(
+                    'Painel da loja',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: telaEstreita ? 11.5 : 12,
+                      color: context.textMuted,
+                    ),
+                  ),
+                ],
+              ),
             ),
           ],
         ),
@@ -291,6 +302,11 @@ class _DashboardPageState extends State<DashboardPage> {
           // Botão para abrir o histórico de saídas de estoque (auditoria GET /stock-exit/ disponível apenas para Dono/Gerente).
           if (Sessao.instance.usuario?.podeVerAuditoria ?? false)
             IconButton(
+              visualDensity: telaEstreita ? VisualDensity.compact : null,
+              padding: EdgeInsets.symmetric(horizontal: telaEstreita ? 6 : 8),
+              constraints: telaEstreita
+                  ? const BoxConstraints(minWidth: 34, minHeight: 34)
+                  : null,
               icon: const Icon(Icons.history_rounded, size: 21),
               tooltip: 'Histórico de saídas de estoque',
               onPressed: _abrirHistoricoSaidas,
@@ -298,18 +314,33 @@ class _DashboardPageState extends State<DashboardPage> {
           // Botão para copiar o resumo consolidado do painel (apenas quando houver dados carregados).
           if (_dados != null)
             IconButton(
+              visualDensity: telaEstreita ? VisualDensity.compact : null,
+              padding: EdgeInsets.symmetric(horizontal: telaEstreita ? 6 : 8),
+              constraints: telaEstreita
+                  ? const BoxConstraints(minWidth: 34, minHeight: 34)
+                  : null,
               icon: const Icon(Icons.content_copy_rounded, size: 20),
               tooltip: 'Copiar resumo do painel',
               onPressed: _copiarRelatorio,
             ),
           // Botão para forçar a atualização imediata dos dados do painel.
           IconButton(
+            visualDensity: telaEstreita ? VisualDensity.compact : null,
+            padding: EdgeInsets.symmetric(horizontal: telaEstreita ? 6 : 8),
+            constraints: telaEstreita
+                ? const BoxConstraints(minWidth: 34, minHeight: 34)
+                : null,
             icon: const Icon(Icons.refresh_rounded, size: 22),
             tooltip: 'Atualizar painel',
             onPressed: _carregando ? null : () => _carregar(),
           ),
           // Botão para alternar dinamicamente entre tema claro e escuro.
           IconButton(
+            visualDensity: telaEstreita ? VisualDensity.compact : null,
+            padding: EdgeInsets.symmetric(horizontal: telaEstreita ? 6 : 8),
+            constraints: telaEstreita
+                ? const BoxConstraints(minWidth: 34, minHeight: 34)
+                : null,
             icon: Icon(
               isDark ? Icons.light_mode_outlined : Icons.dark_mode_outlined,
               size: 21,
