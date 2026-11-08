@@ -201,17 +201,18 @@ Regras (em [`calcado.dart`](lib/models/calcado.dart)):
 | `POST /api/user/` | Criação de conta com perfil (`SELLER`, `OWNER`, `USER`) |
 | `GET /api/user/{user_id}` | Consulta de dados do usuário por ID |
 | `GET /dashboard/` | Destaques da API: produtos com menor (`lowest_stock`) e maior (`highest_stock`) estoque |
+| `GET /dashboard/best-selling` | Lista dos 10 produtos mais vendidos (`total_sold` e `total_value`) |
+| `GET /product/all` | Listagem completa de todos os produtos cadastrados na API |
+| `GET /product/` | Busca paginada e filtrada de produtos (`page`, `page_size`, `name`, `active`, etc.) |
 | `POST /stock-exit/` | Registro de saída / baixa de estoque por usuário |
 | `GET /stock-exit/` | Histórico paginado de saídas de estoque (auditoria) |
-| `GET/POST/PUT/DELETE /product/...` | Consulta, criação, edição e exclusão de produtos |
+| `GET/POST/PUT/DELETE /product/{product_id}` | Consulta por ID, criação, edição e exclusão de produtos |
 | `GET/POST/PUT/DELETE /category/...` | Consulta, criação, alteração e exclusão de marcas/categorias |
 | `GET/POST/PUT/DELETE /stock/...` | Estoque: criação, consulta, baixa de venda e ajuste |
 
 ### Banco Supabase (complementar)
 
-A API não tem rota de **listagem** de produtos/estoque nem campos para foto,
-forma e tabela de medidas. Por isso o app lê e complementa direto no Supabase da
-própria LandView_API:
+A API fornece a listagem de produtos (`GET /product/all`), busca filtrada (`GET /product/`) e o ranking dos mais vendidos (`GET /dashboard/best-selling`). O app complementa com o Supabase da própria LandView_API para ler e gravar os metadados ricos de calçado (foto, forma anatômica e grade de medidas por tamanho):
 
 | Tabela / função | Uso |
 | --- | --- |
