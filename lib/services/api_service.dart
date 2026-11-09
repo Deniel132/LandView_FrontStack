@@ -329,13 +329,21 @@ class ApiService {
 
   /// Consulta produtos paginados e filtrados diretamente na rota oficial `GET /product/` da API no Render.
   Future<List<Calcado>> filtrarProdutos({
+    // Número da página solicitada (padrão: 1).
     int page = 1,
+    // Quantidade máxima de itens por página (padrão: 20).
     int pageSize = 20,
+    // Filtro opcional pelo ID numérico do produto.
     int? idProduct,
+    // Filtro opcional pelo ID numérico do estoque.
     int? idStock,
+    // Filtro opcional pelo valor unitário do calçado.
     double? unitValue,
+    // Filtro opcional pelo ID da categoria/marca.
     int? idCategory,
+    // Filtro opcional pelo status ativo do produto (padrão: true).
     bool? active = true,
+    // Filtro opcional pelo nome do calçado.
     String? name,
   }) async {
     // Monta o mapa de parâmetros de query exigidos pelo endpoint GET /product/.
@@ -361,6 +369,7 @@ class ApiService {
     final queryString = Uri(queryParameters: queryParams).query;
     // Carrega o catálogo completo para cruzar metadados de estoque e grade.
     final todos = await listar();
+    // Bloco protegido para tentar a chamada na API do Render.
     try {
       // Chama a rota oficial GET /product/ com os filtros informados no Render.
       final res = await _enviar(
@@ -370,16 +379,23 @@ class ApiService {
       if (res is List) {
         // Extrai o conjunto de IDs retornados pela filtragem da API.
         final idsFiltrados = <int>{
+          // Percorre cada item retornado pela rota filtrada.
           for (final item in res)
+            // Garante que o item é um mapa válido com product_id numérico.
             if (item is Map<String, dynamic> && item['product_id'] is num)
+              // Converte e adiciona o ID do produto ao conjunto filtrado.
               (item['product_id'] as num).toInt(),
         };
         // Retorna os calçados completos correspondentes aos IDs filtrados pela API.
-        return todos.where((c) => c.id != null && idsFiltrados.contains(c.id)).toList();
+        return todos
+            .where((c) => c.id != null && idsFiltrados.contains(c.id))
+            .toList();
       }
+    // Captura exceções conhecidas da API.
     } on ApiException catch (e) {
       // Propaga erro 401 caso a sessão tenha expirado.
       if (e.status == 401) rethrow;
+    // Ignora falhas de rede temporárias para acionar o filtro local de contingência.
     } catch (_) {}
     // Fallback local caso a rota filtrada não responda a tempo.
     return todos.where((c) {
@@ -762,8 +778,11 @@ class ApiService {
 
     // Indexa o product_category_id por ID do produto para enriquecer o retorno de GET /product/all.
     final categoriaPorProdutoId = <int, int?>{
+      // Percorre cada registro de produto vindo do banco de dados.
       for (final pb in produtosBanco)
+        // Confere se o item possui um ID numérico válido.
         if (pb is Map<String, dynamic> && pb['id'] is num)
+          // Associa o ID do produto ao seu ID de categoria correspondente.
           (pb['id'] as num).toInt():
               (pb['product_category_id'] as num?)?.toInt(),
     };
@@ -772,20 +791,27 @@ class ApiService {
     // caso contrário, utiliza a lista de contingência do banco.
     final List<Map<String, dynamic>> produtos = produtosApi != null
         ? [
+            // Percorre cada produto retornado pela rota GET /product/all do Render.
             for (final item in produtosApi)
+              // Filtra apenas produtos ativos (product_active == true).
               if (item is Map<String, dynamic> &&
                   (item['product_active'] == true ||
                       item['active'] == true ||
                       item['product_active'] == null))
                 {
+                  // Identificador numérico do produto.
                   'id': (item['product_id'] ?? item['id']) as num,
+                  // Nome oficial do calçado vindo da API.
                   'product_name': item['product_name'] as String,
+                  // Preço unitário vindo da API.
                   'unit_value': item['unit_value'] as num,
+                  // Identificador da categoria associada ao produto.
                   'product_category_id': categoriaPorProdutoId[
                       ((item['product_id'] ?? item['id']) as num).toInt()],
                 },
           ]
         : [
+            // Em caso de contingência, utiliza os registros carregados do banco.
             for (final pb in produtosBanco) pb as Map<String, dynamic>,
           ];
 
@@ -1321,48 +1347,69 @@ class ApiService {
   /// Monta os dados consolidados do painel da loja consumindo as rotas oficiais
   /// `GET /dashboard/` e `GET /dashboard/best-selling` da API no Render.
   Future<Dashboard> _dashboardIntegrado() async {
+    // Define o limite de unidades para alerta de estoque baixo.
     const limiteBaixo = 5;
+    // Define o limite de unidades para alerta de estoque alto/excesso.
     const limiteAlto = 40;
+    // Carrega os pares (Calçado, Vendas) consolidados do catálogo.
     final pares = await _carregarTodosComVendas();
 
     // Indexa os calçados carregados pelo ID para associar marca e estoque atual rapidamente.
     final calcadoPorId = <int, Calcado>{
+      // Percorre cada par (Calçado, Vendas) carregado.
       for (final (c, _) in pares)
+        // Associa apenas calçados que possuam ID numérico válido.
         if (c.id != null) c.id!: c,
     };
 
     // Função local para mapear calçado para item do painel.
     ItemDashboard toItem((Calcado, int) par) => ItemDashboard(
+      // Identificador numérico do calçado.
       id: par.$1.id!,
+      // Nome do modelo do calçado.
       nome: par.$1.nome,
+      // Marca fabricante do calçado.
       marca: par.$1.marca,
+      // Quantidade total vendida.
       vendas: par.$2,
+      // Quantidade atual disponível em estoque.
       estoque: par.$1.estoque,
     );
 
     // Ordenações por critérios analíticos locais (fallback).
     final vendidos = [...pares]..sort((a, b) => b.$2.compareTo(a.$2));
+    // Filtra e ordena os modelos com estoque menor ou igual ao limite baixo.
     final baixo = pares.where((p) => p.$1.estoque <= limiteBaixo).toList()
       ..sort((a, b) => a.$1.estoque.compareTo(b.$1.estoque));
+    // Filtra e ordena os modelos com estoque maior ou igual ao limite alto.
     final alto = pares.where((p) => p.$1.estoque >= limiteAlto).toList()
       ..sort((a, b) => b.$1.estoque.compareTo(a.$1.estoque));
 
     // 1. Consulta a rota oficial GET /dashboard/ do Render para obter os extremos de estoque calculados pela API.
     ExtremoEstoque? menorEstoque;
+    // Referência opcional para o produto com maior estoque.
     ExtremoEstoque? maiorEstoque;
+    // Bloco protegido para buscar os destaques de menor e maior estoque na API.
     try {
+      // Dispara a requisição autenticada para GET /dashboard/.
       final resDash = await _enviar(
         (uri) => http.get(uri('/dashboard/'), headers: _headers),
       );
+      // Se o corpo retornado for um objeto JSON válido:
       if (resDash is Map<String, dynamic>) {
+        // Converte o destaque de menor estoque (lowest_stock).
         menorEstoque = ExtremoEstoque.talvez(resDash['lowest_stock']);
+        // Converte o destaque de maior estoque (highest_stock).
         maiorEstoque = ExtremoEstoque.talvez(resDash['highest_stock']);
       }
+    // Ignora falhas de rede pontuais para não bloquear o carregamento do painel.
     } catch (_) {}
 
     // 2. Consulta a nova rota oficial GET /dashboard/best-selling do Render para obter os mais vendidos.
     List<ItemDashboard>? maisVendidosApi;
+    // Acumulador opcional para o total de vendas retornado pela API.
     int? totalVendasApi;
+    // Bloco protegido para consultar o ranking de mais vendidos no Render.
     try {
       // Dispara a requisição autenticada para o endpoint /dashboard/best-selling.
       final resBest = await _enviar(
@@ -1390,14 +1437,20 @@ class ApiService {
               final calcadoLocal = calcadoPorId[prodId.toInt()];
               // Adiciona até os 10 produtos mais vendidos da API.
               if (itens.length < 10) {
+                // Insere o item formatado na lista de mais vendidos.
                 itens.add(
                   ItemDashboard(
+                    // Identificador numérico do produto.
                     id: prodId.toInt(),
+                    // Nome do produto retornado pela API ou pelo catálogo local.
                     nome: (row['product_name'] as String?) ??
                         calcadoLocal?.nome ??
                         'Produto #${prodId.toInt()}',
+                    // Marca associada ao produto no catálogo.
                     marca: calcadoLocal?.marca ?? 'LandView',
+                    // Total de unidades vendidas informado pela API.
                     vendas: totalSold,
+                    // Saldo atual em estoque do produto.
                     estoque: calcadoLocal?.estoque ?? 0,
                   ),
                 );
@@ -1410,24 +1463,38 @@ class ApiService {
         // Define o total consolidado de vendas vindo da API.
         totalVendasApi = somaVendas;
       }
+    // Ignora falhas de rede pontuais usando o cálculo local como contingência.
     } catch (_) {}
 
     // Retorna a entidade completa Dashboard montada priorizando os dados da API no Render.
     return Dashboard(
+      // Monta o resumo numérico do topo do painel.
       resumo: ResumoDashboard(
+        // Quantidade total de modelos ativos no catálogo.
         totalModelos: pares.length,
+        // Soma de todas as unidades disponíveis em estoque.
         unidadesEmEstoque: pares.fold(0, (s, p) => s + p.$1.estoque),
+        // Total de unidades vendidas (prioriza o retorno de /dashboard/best-selling).
         vendas30Dias: totalVendasApi ?? pares.fold(0, (s, p) => s + p.$2),
+        // Total de modelos na faixa de alerta de estoque baixo.
         modelosAcabando: baixo.length,
+        // Total de modelos na faixa de excesso de estoque.
         modelosComExcesso: alto.length,
+        // Limite configurado para alerta de estoque baixo.
         limiteEstoqueBaixo: limiteBaixo,
+        // Limite configurado para alerta de estoque alto.
         limiteEstoqueAlto: limiteAlto,
       ),
+      // Lista dos produtos mais vendidos vinda da API (ou fallback local).
       maisVendidos: maisVendidosApi ??
           vendidos.where((p) => p.$2 > 0).take(10).map(toItem).toList(),
+      // Lista de produtos com estoque crítico/baixo.
       estoqueBaixo: baixo.map(toItem).toList(),
+      // Lista de produtos com estoque elevado.
       estoqueAlto: alto.map(toItem).toList(),
+      // Destaque de menor estoque vindo de GET /dashboard/.
       menorEstoque: menorEstoque,
+      // Destaque de maior estoque vindo de GET /dashboard/.
       maiorEstoque: maiorEstoque,
     );
   }
