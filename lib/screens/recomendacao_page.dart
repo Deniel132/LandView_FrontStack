@@ -21,6 +21,7 @@ import '../widgets/pilula.dart';
 
 /// Tela do Provador Virtual: permite ao vendedor inserir o comprimento do pé do cliente em centímetros
 /// e opcionalmente a numeração habitual que ele calça em outras marcas.
+/// Se o cliente não souber a medida do pé, basta informar a numeração habitual: o sistema estima o pé.
 /// O sistema processa a recomendação considerando o tipo (tênis/chuteira) e o formato da forma (estreita, padrão, larga),
 /// destacando visualmente o tamanho sugerido na grade do calçado.
 class RecomendacaoPage extends StatefulWidget {
@@ -84,10 +85,13 @@ class _RecomendacaoPageState extends State<RecomendacaoPage> {
     });
 
     try {
+      // Lê a medida do pé digitada (fica nula se o cliente não souber a medida)
+      final medida = Formato.lerNumero(_peController.text);
       // Chama o endpoint de recomendação passando o ID do calçado, medida do pé e parâmetros habituais
       final r = await ApiService.instance.recomendar(
         calcadoId: widget.calcado.id!,
-        medidaPeCm: Formato.lerNumero(_peController.text)!,
+        // Medida do pé opcional: sem ela, o cálculo estima pela numeração habitual
+        medidaPeCm: medida,
         numeracaoHabitual: Formato.lerNumero(_numeracaoController.text),
         marcaHabitual: marca.isEmpty ? null : marca,
       );
@@ -218,12 +222,23 @@ class _RecomendacaoPageState extends State<RecomendacaoPage> {
                             hintText: 'Ex.: 26,2',
                             suffixText: 'cm',
                             prefixIcon: Icon(Icons.straighten_rounded),
+                            // Orienta o vendedor quando o cliente não sabe a própria medida
+                            helperText:
+                                'Não sabe a medida? Deixe em branco e informe a numeração abaixo.',
+                            helperMaxLines: 2,
                           ),
                           // Validação da medida do pé (espera entre 15 e 35 cm)
                           validator: (v) {
                             final n = Formato.lerNumero(v ?? '');
+                            // Campo vazio: só aceita se a numeração habitual tiver sido informada
                             if (n == null) {
-                              return 'Informe a medida em centímetros';
+                              // Verifica se o vendedor preencheu a numeração habitual
+                              final temNumeracao =
+                                  _numeracaoController.text.trim().isNotEmpty;
+                              // Com numeração, o cálculo segue usando a estimativa
+                              if (temNumeracao) return null;
+                              // Sem nenhuma referência, pede uma das duas informações
+                              return 'Informe a medida ou a numeração que o cliente usa';
                             }
                             if (n < 15 || n > 35) {
                               return 'Use um valor entre 15 e 35 cm';
@@ -264,7 +279,7 @@ class _RecomendacaoPageState extends State<RecomendacaoPage> {
                           textInputAction: TextInputAction.next,
                           decoration: const InputDecoration(
                             labelText: 'Numeração que o cliente costuma usar',
-                            hintText: 'Ex.: 41 (opcional)',
+                            hintText: 'Ex.: 41',
                             prefixIcon: Icon(
                               Icons.confirmation_number_outlined,
                             ),

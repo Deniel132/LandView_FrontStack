@@ -204,9 +204,14 @@ Regras (em [`calcado.dart`](lib/models/calcado.dart)):
 | `GET /dashboard/best-selling` | Lista dos 10 produtos mais vendidos (`total_sold` e `total_value`) |
 | `GET /product/all` | Listagem completa de todos os produtos cadastrados na API |
 | `GET /product/` | Busca paginada e filtrada de produtos (`page`, `page_size`, `name`, `active`, etc.) |
+| `POST /product/` | Criação de produto com estoque inicial (`stock_item_dto`) e lista de fotos em Base64 (`images`) |
+| `POST /images/product/{product_id}` | Cadastro de uma ou mais imagens em Base64 no bucket `product-images` |
+| `GET /images/product/{product_id}/all` | Listagem de todas as imagens vinculadas a um produto |
+| `GET /images/product/{product_id}` | Busca filtrada de imagens de um produto (`image_id`, `image_name`) |
+| `DELETE /images/product/{product_id}/{image_id}` | Exclusão de imagem do bucket e da tabela `image` |
 | `POST /stock-exit/` | Registro de saída / baixa de estoque por usuário |
 | `GET /stock-exit/` | Histórico paginado de saídas de estoque (auditoria) |
-| `GET/POST/PUT/DELETE /product/{product_id}` | Consulta por ID, criação, edição e exclusão de produtos |
+| `GET/PUT/DELETE /product/{product_id}` | Consulta por ID, edição e exclusão de produtos |
 | `GET/POST/PUT/DELETE /category/...` | Consulta, criação, alteração e exclusão de marcas/categorias |
 | `GET/POST/PUT/DELETE /stock/...` | Estoque: criação, consulta, baixa de venda e ajuste |
 
