@@ -475,6 +475,17 @@ class ApiService {
         // Caso contrário, usa a instância do banco com o saldo de estoque atualizado
         : item.copyWith(estoque: estoqueAtual);
 
+    // Se o calçado ainda não tiver imagem no metadado, consulta a rota GET /images/product/{id}/all da API.
+    if (!retorno.temImagem) {
+      // Tenta recuperar a imagem salva no bucket da API para este produto.
+      final imagemApi = await _obterImagemDoBucketOuApi(id);
+      // Se encontrou imagem válida na rota de imagens, vincula ao calçado.
+      if (imagemApi != null && imagemApi.isNotEmpty) {
+        // Atualiza o calçado com a imagem recuperada da rota /images.
+        retorno = retorno.copyWith(imagemUrl: imagemApi);
+      }
+    }
+
     // Verifica se o registro do banco de dados já possui distribuição de estoque por numeração
     final temGradeNoBanco = retorno.tamanhos.any((t) => t.estoque != null);
     // Se a grade já veio preenchida do banco de dados
@@ -511,6 +522,167 @@ class ApiService {
         : 'image/png';
     // Codifica os bytes da imagem em formato Base64.
     return 'data:$mime;base64,${base64Encode(bytes)}';
+  }
+
+  /// Cadastra uma ou mais imagens em Base64 vinculadas a um produto na rota `POST /images/product/{product_id}`.
+  Future<void> cadastrarImagensProduto(
+    // Identificador numérico do produto dono das imagens.
+    int productId,
+    // Lista de strings em formato Base64 (com ou sem prefixo data URI).
+    List<String> imagesBase64,
+  ) async {
+    // Se a lista estiver vazia, não há nada para enviar.
+    if (imagesBase64.isEmpty) return;
+    // Bloco protegido para enviar as imagens ao endpoint oficial no Render.
+    try {
+      // Dispara POST /images/product/{product_id} com o corpo ImageRequestDTO {"images": [...]}.
+      await _enviar(
+        (uri) => http.post(
+          uri('/images/product/$productId'),
+          headers: _headers,
+          body: jsonEncode({'images': imagesBase64}),
+        ),
+      );
+    // Captura erros da API para relançar apenas se a sessão tiver expirado (401).
+    } on ApiException catch (e) {
+      // Se não autorizado, propaga para encerrar a sessão.
+      if (e.status == 401) rethrow;
+    // Ignora falhas de rede pontuais pois o metadado também é salvo em sub_characteristics.
+    } catch (_) {}
+  }
+
+  /// Lista todas as imagens vinculadas a um produto na rota `GET /images/product/{product_id}/all`.
+  Future<List<Map<String, dynamic>>> listarImagensProduto(int productId) async {
+    // Bloco protegido para consultar a rota de listagem de imagens do produto.
+    try {
+      // Chama GET /images/product/{product_id}/all no Render.
+      final res = await _enviar(
+        (uri) => http.get(uri('/images/product/$productId/all'), headers: _headers),
+      );
+      // Se a resposta for uma lista JSON válida, converte os itens para mapas.
+      if (res is List) {
+        // Retorna a lista de objetos de imagem (id, image_name, image_path, product_id, url).
+        return [
+          for (final item in res)
+            if (item is Map<String, dynamic>) item,
+        ];
+      }
+    // Propaga erro 401 caso a sessão tenha expirado.
+    } on ApiException catch (e) {
+      if (e.status == 401) rethrow;
+    } catch (_) {}
+    // Retorna lista vazia caso o produto não possua imagens na rota.
+    return const [];
+  }
+
+  /// Busca imagens de um produto aplicando filtros opcionais na rota `GET /images/product/{product_id}`.
+  Future<List<Map<String, dynamic>>> filtrarImagensProduto(
+    // Identificador numérico do produto.
+    int productId, {
+    // Filtro opcional pelo ID da imagem.
+    int? imageId,
+    // Filtro opcional pelo nome da imagem.
+    String? imageName,
+  }) async {
+    // Monta os parâmetros de query opcionais.
+    final queryParams = <String, String>{
+      // Filtra pelo ID da imagem se informado.
+      if (imageId != null) 'image_id': imageId.toString(),
+      // Filtra pelo nome da imagem se informado.
+      if (imageName != null && imageName.trim().isNotEmpty)
+        'image_name': imageName.trim(),
+    };
+    // Monta a string de query se houver filtros.
+    final sufixo = queryParams.isEmpty
+        ? ''
+        : '?${Uri(queryParameters: queryParams).query}';
+    // Bloco protegido para consultar a rota filtrada de imagens.
+    try {
+      // Chama GET /images/product/{product_id} no Render.
+      final res = await _enviar(
+        (uri) => http.get(
+          uri('/images/product/$productId$sufixo'),
+          headers: _headers,
+        ),
+      );
+      // Se retornou uma lista válida, converte os itens.
+      if (res is List) {
+        return [
+          for (final item in res)
+            if (item is Map<String, dynamic>) item,
+        ];
+      }
+    } on ApiException catch (e) {
+      if (e.status == 401) rethrow;
+    } catch (_) {}
+    // Retorna lista vazia caso não encontre registros.
+    return const [];
+  }
+
+  /// Remove uma imagem específica do produto e do bucket via `DELETE /images/product/{product_id}/{image_id}`.
+  Future<void> excluirImagemProduto(int productId, int imageId) async {
+    // Bloco protegido para chamar a rota de exclusão de imagem no Render.
+    try {
+      // Dispara DELETE /images/product/{product_id}/{image_id}.
+      await _enviar(
+        (uri) => http.delete(
+          uri('/images/product/$productId/$imageId'),
+          headers: _headers,
+        ),
+      );
+    } on ApiException catch (e) {
+      if (e.status == 401) rethrow;
+    } catch (_) {}
+  }
+
+  /// Recupera a primeira imagem de um produto na rota `/images/product/{id}/all` e converte
+  /// o conteúdo Base64 salvo como `text/plain` no bucket `product-images` para data URI exibível.
+  Future<String?> _obterImagemDoBucketOuApi(int productId) async {
+    // Consulta todas as imagens vinculadas ao produto na API.
+    final imagens = await listarImagensProduto(productId);
+    // Se não houver imagens cadastradas, retorna nulo.
+    if (imagens.isEmpty) return null;
+    // Pega a imagem mais recente (última da lista).
+    final ultima = imagens.last;
+    // Extrai a URL pública retornada pelo backend (campo url ou image_url).
+    final url = (ultima['url'] ?? ultima['image_url']) as String?;
+    // Se a URL estiver vazia, retorna nulo.
+    if (url == null || url.trim().isEmpty) return null;
+    // Se já for uma data URI Base64, retorna diretamente.
+    if (url.startsWith('data:image/')) return url;
+    // Como o ImageService salva o texto Base64 como text/plain no bucket product-images,
+    // baixamos o texto Base64 da URL pública para montar a data URI renderizável pelo Flutter.
+    if (url.contains('/product-images/')) {
+      try {
+        // Faz o GET na URL pública do bucket no Supabase Storage.
+        final resp = await http.get(Uri.parse(url)).timeout(const Duration(seconds: 8));
+        // Se respondeu 200 OK e possui corpo:
+        if (resp.statusCode == 200 && resp.body.trim().isNotEmpty) {
+          // Limpa quebras de linha ou espaços do conteúdo Base64 salvo.
+          final conteudo = resp.body.trim();
+          // Se já tiver o prefixo data:image, devolve direto.
+          if (conteudo.startsWith('data:image/')) return conteudo;
+          // Monta a data URI Base64 pronta para exibição.
+          return 'data:image/png;base64,$conteudo';
+        }
+      } catch (_) {}
+    }
+    // Caso seja uma URL de imagem binária convencional, retorna a própria URL.
+    return url;
+  }
+
+  /// Extrai a lista de strings Base64 de um calçado quando ele possui foto em Base64 ou bytes em memória.
+  List<String> _extrairImagensBase64(Calcado c) {
+    // Se houver bytes em memória, codifica diretamente para data URI Base64.
+    if (c.imagemBytes != null && c.imagemBytes!.isNotEmpty) {
+      return ['data:image/png;base64,${base64Encode(c.imagemBytes!)}'];
+    }
+    // Se a imagemUrl for uma data URI Base64 (ex: data:image/jpeg;base64,...), envia na lista.
+    if (c.imagemUrl != null && c.imagemUrl!.trim().startsWith('data:')) {
+      return [c.imagemUrl!.trim()];
+    }
+    // Caso seja uma URL externa comum ou sem foto, retorna lista vazia.
+    return const [];
   }
 
   /// Cria categoria (`POST /category/`), produto (`POST /product/`) e estoque (`POST /stock/`)
@@ -625,18 +797,36 @@ class ApiService {
 
   /// Executa o algoritmo do Provador Virtual calculando a numeração perfeita
   /// baseada na medida em centímetros do pé do cliente e na forma anatômica do calçado.
+  /// Se o cliente não souber a medida do pé, o cálculo usa a numeração habitual como estimativa.
   Future<Recomendacao> recomendar({
+    // Identificador do calçado que o cliente quer experimentar.
     required int calcadoId,
-    required double medidaPeCm,
+    // Medida do pé em centímetros (opcional quando a numeração habitual for informada).
+    double? medidaPeCm,
+    // Numeração que o cliente costuma usar em outras marcas (opcional).
     double? numeracaoHabitual,
+    // Marca dessa numeração habitual (opcional).
     String? marcaHabitual,
   }) async {
+    // Delega para o cálculo integrado do provador virtual.
     return _recomendarIntegrado(
       calcadoId: calcadoId,
       medidaPeCm: medidaPeCm,
       numeracaoHabitual: numeracaoHabitual,
       marcaHabitual: marcaHabitual,
     );
+  }
+
+  /// Estima o comprimento do pé (cm) a partir da numeração habitual do cliente.
+  /// Usa a mesma grade de referência do app (palmilha de 25,0 cm no 37 e +0,667 cm por número,
+  /// padrão do Ponto Francês) e desconta a folga de conforto padrão de 1,0 cm de um tênis.
+  static double estimarMedidaPe(double numeracaoHabitual) {
+    // Calcula o comprimento da palmilha de referência para a numeração informada.
+    final palmilhaReferencia = 25.0 + (numeracaoHabitual - 37) * 0.667;
+    // Desconta a folga padrão de conforto para chegar ao tamanho aproximado do pé.
+    final peEstimado = palmilhaReferencia - 1.0;
+    // Arredonda para uma casa decimal, igual às medidas digitadas pelo vendedor.
+    return double.parse(peEstimado.toStringAsFixed(1));
   }
 
   // ------------------------------ Integração com LandView_API (Render)
@@ -988,30 +1178,113 @@ class ApiService {
     return ((criados.first as Map<String, dynamic>)['id'] as num).toInt();
   }
 
-  /// Cria um calçado integrando chamadas às rotas POST /product/ e POST /stock/ no Render.
+  /// Cria um calçado integrando chamadas às rotas `POST /product/`, `POST /images/product/{id}` e `POST /stock/` no Render.
   Future<Calcado> _criarIntegrado(Calcado c) async {
+    // Obtém ou cria a categoria correspondente à marca e ao tipo do calçado.
     final catId = await _obterOuCriarCategoriaId(c.marca, c.tipo.valor);
 
+    // Estrutura de metadados ricos armazenados em JSON (grade por tamanho e imagem).
+    final meta = {
+      'imagem_url': c.temImagemUrl ? c.imagemUrl!.trim() : null,
+      'tamanhos': c.tamanhosComEstoque.map((t) => t.toJson()).toList(),
+      'vendas_30_dias': 0,
+    };
+
+    // Extrai a lista de imagens em Base64 (caso o usuário tenha enviado foto do dispositivo).
+    final imagensBase64 = _extrairImagensBase64(c);
+    // Indica se a imagem já foi salva durante a criação do produto.
+    var imagemJaEnviada = false;
+
     int? prodId;
-    // 1. Tenta criar pela rota oficial POST /product/ do Render.
+    // 1. Tenta criar pela rota oficial POST /product/ do Render no novo formato CreateProductRequestDTO
+    // (category_id, product_name, unit_value, stock_item_dto e lista images em Base64).
     try {
+      // Dispara a requisição com o payload completo do CreateProductRequestDTO.
       final prodRender = await _enviar(
         (uri) => http.post(
           uri('/product/'),
           headers: _headers,
           body: jsonEncode({
-            'product_name': c.nome,
-            'unit_value': c.preco,
+            // Identificador da categoria no novo DTO (CreateProductRequestDTO).
+            'category_id': catId,
+            // Compatibilidade com o campo anterior caso necessário.
             'product_category_id': catId,
+            // Nome do modelo do calçado.
+            'product_name': c.nome,
+            // Preço unitário do calçado.
+            'unit_value': c.preco,
+            // Lista inicial de itens de estoque exigida pelo CreateProductRequestDTO.
+            'stock_item_dto': [
+              {
+                'characteristics': c.forma.valor,
+                'sub_characteristics': jsonEncode(meta),
+                'quantity': c.estoque,
+              },
+            ],
+            // Lista de imagens em Base64 enviada no cadastro do produto.
+            'images': imagensBase64.isNotEmpty ? imagensBase64 : null,
           }),
         ),
       );
+      // Se a API retornou o produto criado com seu product_id:
       if (prodRender is Map<String, dynamic> &&
           prodRender['product_id'] != null) {
+        // Armazena o ID numérico gerado pela API.
         prodId = (prodRender['product_id'] as num).toInt();
+        // Marca que a imagem já foi enviada no próprio POST /product/.
+        if (imagensBase64.isNotEmpty) imagemJaEnviada = true;
       }
     } on ApiException catch (e) {
+      // Se o token tiver expirado (401), propaga imediatamente.
       if (e.status == 401) rethrow;
+    } catch (_) {}
+
+    // 1b. Caso o POST /product/ com images tenha falhado (ex: validação antes de gerar ID),
+    // tenta criar o produto com images: null e em seguida envia na rota POST /images/product/{id}.
+    if (prodId == null) {
+      // Bloco protegido para tentar a criação do produto sem a lista de imagens no corpo.
+      try {
+        // Envia a requisição de criação com images: null para obter o product_id.
+        final prodRenderSemImg = await _enviar(
+          (uri) => http.post(
+            uri('/product/'),
+            headers: _headers,
+            body: jsonEncode({
+              // Identificador numérico da categoria do calçado.
+              'category_id': catId,
+              // Chave de compatibilidade da categoria.
+              'product_category_id': catId,
+              // Nome do modelo do calçado.
+              'product_name': c.nome,
+              // Preço unitário de venda.
+              'unit_value': c.preco,
+              // Lista de itens de estoque inicial exigida pelo DTO.
+              'stock_item_dto': [
+                {
+                  // Forma anatômica do calçado (estreita, padrao, larga).
+                  'characteristics': c.forma.valor,
+                  // Metadados da grade de tamanhos e imagem serializados em JSON.
+                  'sub_characteristics': jsonEncode(meta),
+                  // Quantidade total inicial em estoque.
+                  'quantity': c.estoque,
+                },
+              ],
+              // Envia nulo para cadastrar a imagem separadamente na rota /images/product/{id}.
+              'images': null,
+            }),
+          ),
+        );
+        // Se a API respondeu com o identificador do produto criado:
+        if (prodRenderSemImg is Map<String, dynamic> &&
+            prodRenderSemImg['product_id'] != null) {
+          // Armazena o ID numérico retornado pela API.
+          prodId = (prodRenderSemImg['product_id'] as num).toInt();
+        }
+      // Propaga erro 401 caso a sessão tenha expirado.
+      } on ApiException catch (e) {
+        if (e.status == 401) rethrow;
+      // Ignora falhas de rede temporárias para acionar o fallback no banco.
+      } catch (_) {}
     }
 
     // Fallback de criação de produto no banco se o endpoint falhar.
@@ -1033,14 +1306,13 @@ class ApiService {
           ((prodLista.first as Map<String, dynamic>)['id'] as num).toInt();
     }
 
-    // Estrutura de metadados ricos armazenados em JSON.
-    final meta = {
-      'imagem_url': c.temImagemUrl ? c.imagemUrl!.trim() : null,
-      'tamanhos': c.tamanhosComEstoque.map((t) => t.toJson()).toList(),
-      'vendas_30_dias': 0,
-    };
+    // 2. Se houver foto em Base64 e ela ainda não tiver sido gravada no POST /product/,
+    // cadastra na rota dedicada POST /images/product/{product_id} do Render.
+    if (imagensBase64.isNotEmpty && !imagemJaEnviada) {
+      await cadastrarImagensProduto(prodId, imagensBase64);
+    }
 
-    // 2. Cria o registro de estoque correspondente via POST /stock/ do Render.
+    // 3. Cria o registro de estoque correspondente via POST /stock/ do Render.
     int? stockId;
     try {
       final stockRender = await _enviar(
@@ -1093,7 +1365,7 @@ class ApiService {
     return buscar(prodId);
   }
 
-  /// Atualiza o produto via `PUT /product/{id}` e o estoque via `PUT /stock/{id}`.
+  /// Atualiza o produto via `PUT /product/{id}`, imagens via `/images/product/{id}` e o estoque via `PUT /stock/{id}`.
   Future<Calcado> _atualizarIntegrado(Calcado c) async {
     final id = c.id!;
     final catId = await _obterOuCriarCategoriaId(c.marca, c.tipo.valor);
@@ -1129,6 +1401,26 @@ class ApiService {
         )
         .timeout(_timeout);
 
+    // 2. Se o calçado possuir imagem em Base64, sincroniza com as rotas /images/product/{id} da API.
+    final imagensBase64 = _extrairImagensBase64(c);
+    // Verifica se há nova imagem em Base64 para sincronizar.
+    if (imagensBase64.isNotEmpty) {
+      // Consulta imagens anteriores vinculadas ao produto para substituí-las sem acumular lixo no bucket.
+      final antigas = await listarImagensProduto(id);
+      // Percorre cada imagem antiga cadastrada na API.
+      for (final img in antigas) {
+        // Extrai o identificador numérico da imagem antiga.
+        final imgId = (img['id'] ?? img['image_id']) as num?;
+        // Se o ID for válido, remove do bucket e do banco via DELETE /images/product/{id}/{image_id}.
+        if (imgId != null) {
+          // Executa a exclusão da imagem antiga.
+          await excluirImagemProduto(id, imgId.toInt());
+        }
+      }
+      // Envia a nova imagem Base64 para a rota POST /images/product/{id}.
+      await cadastrarImagensProduto(id, imagensBase64);
+    }
+
     // Recupera o registro atual de estoque no banco para identificar o stock_id.
     final stockRow = await _obterStockRowSupabase(id);
 
@@ -1138,7 +1430,7 @@ class ApiService {
       'tamanhos': c.tamanhosComEstoque.map((t) => t.toJson()).toList(),
     };
 
-    // 2. Atualiza a quantidade chamando PUT /stock/{stock_id} no Render.
+    // 3. Atualiza a quantidade chamando PUT /stock/{stock_id} no Render.
     if (stockRow != null) {
       final stockId = (stockRow['id'] as num).toInt();
       try {
@@ -1194,9 +1486,33 @@ class ApiService {
     return buscar(id);
   }
 
-  /// Exclui o estoque e o produto chamando as rotas DELETE da API no Render.
+  /// Exclui as imagens, o estoque e o produto chamando as rotas DELETE da API no Render.
   Future<void> _excluirIntegrado(int id) async {
-    // 1. Remove os registros de auditoria vinculados a este produto para evitar erro de integridade referencial
+    // 1. Remove as imagens vinculadas ao produto na rota DELETE /images/product/{id}/{image_id} e no banco.
+    try {
+      // Lista todas as imagens cadastradas para este produto na API.
+      final imagens = await listarImagensProduto(id);
+      // Remove cada imagem do bucket e da tabela image pela rota oficial.
+      for (final img in imagens) {
+        // Extrai o identificador numérico da imagem.
+        final imgId = (img['id'] ?? img['image_id']) as num?;
+        // Se o ID da imagem existir, solicita a exclusão na API.
+        if (imgId != null) {
+          // Chama DELETE /images/product/{id}/{image_id}.
+          await excluirImagemProduto(id, imgId.toInt());
+        }
+      }
+      // Garante a limpeza de eventuais registros órfãos na tabela image para evitar erro de chave estrangeira.
+      await http
+          .delete(
+            _sbUri('/image?product_id=eq.$id'),
+            headers: _supabaseHeaders,
+          )
+          .timeout(_timeout);
+    // Ignora falhas caso o produto não possua imagens cadastradas.
+    } catch (_) {}
+
+    // 2. Remove os registros de auditoria vinculados a este produto para evitar erro de integridade referencial
     try {
       // Deleta as saídas de estoque associadas a este produto
       await http
@@ -1502,10 +1818,22 @@ class ApiService {
   /// Executa o cálculo da recomendação de tamanho do provador virtual.
   Future<Recomendacao> _recomendarIntegrado({
     required int calcadoId,
-    required double medidaPeCm,
+    double? medidaPeCm,
     double? numeracaoHabitual,
     String? marcaHabitual,
   }) async {
+    // Exige pelo menos uma referência: a medida do pé ou a numeração habitual.
+    if (medidaPeCm == null && numeracaoHabitual == null) {
+      throw ApiException(
+        'Informe a medida do pé ou a numeração que o cliente costuma usar.',
+        status: 400,
+      );
+    }
+    // Indica se a medida do pé foi estimada pela numeração habitual (cliente não sabia a medida).
+    final medidaEstimada = medidaPeCm == null;
+    // Usa a medida informada ou, na falta dela, a estimativa calculada pela numeração habitual.
+    final pe = medidaPeCm ?? estimarMedidaPe(numeracaoHabitual!);
+
     final c = await buscar(calcadoId);
     if (c.tamanhos.isEmpty) {
       throw ApiException(
@@ -1522,7 +1850,7 @@ class ApiService {
       FormaCalcado.padrao => 0.0,
       FormaCalcado.larga => -0.2,
     };
-    final alvo = medidaPeCm + folgaBase + ajusteForma;
+    final alvo = pe + folgaBase + ajusteForma;
 
     // Busca o tamanho com palmilha compatível na tabela do calçado.
     final t = c.tamanhos;
@@ -1532,11 +1860,15 @@ class ApiService {
 
     final escolhido = t[i];
     final folgaReal = double.parse(
-      (escolhido.comprimentoCm - medidaPeCm).toStringAsFixed(1),
+      (escolhido.comprimentoCm - pe).toStringAsFixed(1),
     );
 
     // Gera as notas técnicas explicativas para o vendedor orientar o cliente.
     final notas = <String>[
+      // Avisa o vendedor quando o cálculo partiu de uma estimativa e não de uma medida real.
+      if (medidaEstimada)
+        'Pé estimado em ${Formato.cm(pe)} a partir da numeração habitual '
+            '${Formato.numeracao(numeracaoHabitual!)}. Se possível, meça o pé para confirmar.',
       if (acimaDaTabela)
         'A medida informada fica no limite superior da grade cadastrada.'
       else
