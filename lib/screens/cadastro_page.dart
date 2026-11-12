@@ -279,7 +279,8 @@ class _CadastroPageState extends State<CadastroPage> {
     return Scaffold(
       appBar: AppBar(
         title: Text(_editando ? 'Editar modelo' : 'Novo modelo'),
-        actions: const [MarcaAppBar()],
+        // Inclui o botão de alternar tema claro/escuro ao lado do avatar da conta
+        actions: const [BotaoAlternarTema(), MarcaAppBar()],
       ),
       body: Center(
         child: ConstrainedBox(

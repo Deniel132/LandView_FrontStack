@@ -25,11 +25,22 @@ import '../widgets/pilula.dart';
 /// O sistema processa a recomendação considerando o tipo (tênis/chuteira) e o formato da forma (estreita, padrão, larga),
 /// destacando visualmente o tamanho sugerido na grade do calçado.
 class RecomendacaoPage extends StatefulWidget {
-  /// Calçado sobre o qual a recomendação de tamanho será calculada
-  final Calcado calcado;
+  /// Calçado fixo recebido da tela de detalhe (quando nulo, exibe seletor de modelos para uso direto na Navbar)
+  final Calcado? calcado;
 
-  /// Construtor com calçado obrigatório
-  const RecomendacaoPage({super.key, required this.calcado});
+  /// Controla se a tela exibe sua própria AppBar superior (falso quando embutida na Navbar principal)
+  final bool mostrarAppBar;
+
+  /// Notificador opcional que dispara recarregamento da lista de calçados quando acionado pela Navbar
+  final ValueNotifier<int>? gatilhoAtualizacao;
+
+  /// Construtor flexível para uso avulso (DetalhePage) ou direto na aba Provador da Navbar
+  const RecomendacaoPage({
+    super.key,
+    this.calcado,
+    this.mostrarAppBar = true,
+    this.gatilhoAtualizacao,
+  });
 
   @override
   State<RecomendacaoPage> createState() => _RecomendacaoPageState();
@@ -48,6 +59,18 @@ class _RecomendacaoPageState extends State<RecomendacaoPage> {
   // Controlador do campo opcional da marca dessa numeração habitual
   final _marcaController = TextEditingController();
 
+  // Lista de calçados disponíveis quando o Provador é aberto direto pela aba da Navbar
+  List<Calcado> _modelosDisponiveis = [];
+
+  // Calçado atualmente selecionado para cálculo da recomendação
+  Calcado? _selecionado;
+
+  // Indica se a lista de calçados do seletor está sendo carregada da API
+  bool _carregandoModelos = false;
+
+  // Mensagem de erro caso falhe o carregamento inicial de modelos para o seletor
+  String? _erroModelos;
+
   // Flag indicadora de cálculo em andamento
   bool _calculando = false;
 
@@ -58,7 +81,32 @@ class _RecomendacaoPageState extends State<RecomendacaoPage> {
   Recomendacao? _resultado;
 
   @override
+  void initState() {
+    super.initState();
+    // Caso um calçado específico já tenha sido informado, define-o como ativo
+    _selecionado = widget.calcado;
+    // Escuta solicitações de atualização vindas da Navbar principal
+    widget.gatilhoAtualizacao?.addListener(_aoDispararGatilho);
+    // Quando aberto direto pela Navbar sem calçado prévio, carrega a lista do catálogo
+    if (_selecionado == null) {
+      _carregarModelos();
+    }
+  }
+
+  @override
+  void didUpdateWidget(covariant RecomendacaoPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // Atualiza o ouvinte se o notificador for alterado
+    if (oldWidget.gatilhoAtualizacao != widget.gatilhoAtualizacao) {
+      oldWidget.gatilhoAtualizacao?.removeListener(_aoDispararGatilho);
+      widget.gatilhoAtualizacao?.addListener(_aoDispararGatilho);
+    }
+  }
+
+  @override
   void dispose() {
+    // Remove o ouvinte da Navbar ao desmontar
+    widget.gatilhoAtualizacao?.removeListener(_aoDispararGatilho);
     // Libera a memória ocupada pelos controladores de texto ao fechar a tela
     _peController.dispose();
     _numeracaoController.dispose();
@@ -66,8 +114,54 @@ class _RecomendacaoPageState extends State<RecomendacaoPage> {
     super.dispose();
   }
 
+  /// Recarrega a lista de modelos do seletor quando a Navbar solicitar atualização
+  void _aoDispararGatilho() {
+    if (widget.calcado == null) {
+      _carregarModelos(silencioso: _modelosDisponiveis.isNotEmpty);
+    }
+  }
+
+  /// Carrega os modelos cadastrados no catálogo para o vendedor escolher qual provar
+  Future<void> _carregarModelos({bool silencioso = false}) async {
+    // Ativa spinner apenas se não houver modelos já visíveis na tela
+    if (!silencioso) {
+      setState(() {
+        _carregandoModelos = true;
+        _erroModelos = null;
+      });
+    }
+    try {
+      // Busca a lista atualizada de calçados da API
+      final lista = await ApiService.instance.listar();
+      if (!mounted) return;
+      // Filtra apenas modelos que possuem ID válido
+      final validos = lista.where((m) => m.id != null).toList();
+      // Preserva a seleção atual pelo ID ou seleciona o primeiro disponível
+      final idAtual = _selecionado?.id;
+      final mantido = idAtual == null
+          ? null
+          : validos.where((m) => m.id == idAtual).firstOrNull;
+      setState(() {
+        _modelosDisponiveis = validos;
+        _selecionado = mantido ?? (validos.isNotEmpty ? validos.first : null);
+        _carregandoModelos = false;
+        _erroModelos = null;
+      });
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _carregandoModelos = false;
+        if (_modelosDisponiveis.isEmpty) _erroModelos = e.mensagem;
+      });
+    }
+  }
+
   /// Dispara o cálculo do tamanho ideal via API ou algoritmo local
   Future<void> _calcular() async {
+    // Impede cálculo se nenhum modelo estiver selecionado
+    final calcadoAlvo = _selecionado;
+    if (calcadoAlvo == null || calcadoAlvo.id == null) return;
+
     // Valida se os campos foram preenchidos corretamente
     if (!(_formKey.currentState?.validate() ?? false)) return;
 
@@ -87,9 +181,9 @@ class _RecomendacaoPageState extends State<RecomendacaoPage> {
     try {
       // Lê a medida do pé digitada (fica nula se o cliente não souber a medida)
       final medida = Formato.lerNumero(_peController.text);
-      // Chama o endpoint de recomendação passando o ID do calçado, medida do pé e parâmetros habituais
+      // Chama o endpoint de recomendação passando o ID do calçado selecionado, medida do pé e parâmetros habituais
       final r = await ApiService.instance.recomendar(
-        calcadoId: widget.calcado.id!,
+        calcadoId: calcadoAlvo.id!,
         // Medida do pé opcional: sem ela, o cálculo estima pela numeração habitual
         medidaPeCm: medida,
         numeracaoHabitual: Formato.lerNumero(_numeracaoController.text),
@@ -116,86 +210,181 @@ class _RecomendacaoPageState extends State<RecomendacaoPage> {
 
   @override
   Widget build(BuildContext context) {
-    // Calçado de referência
-    final c = widget.calcado;
+    // Constrói o conteúdo interno do Provador Virtual (carregamento, erro, vazio ou formulário completo)
+    final corpoConteudo = _construirCorpo(context);
 
-    // Estrutura principal da página com Scaffold
+    // Quando embutido na aba Provador da Navbar, devolve apenas o corpo centralizado sem AppBar extra
+    if (!widget.mostrarAppBar) return corpoConteudo;
+
+    // Estrutura completa com Scaffold e AppBar quando aberta a partir dos detalhes de um produto
     return Scaffold(
       appBar: AppBar(
         title: const Text('Provador · Recomendar tamanho'),
-        actions: const [MarcaAppBar()],
+        // Inclui o botão de alternar tema claro/escuro ao lado do avatar da conta
+        actions: const [BotaoAlternarTema(), MarcaAppBar()],
       ),
-      body: Center(
-        // Centraliza e limita a largura a 560px para boa leitura visual
+      body: corpoConteudo,
+    );
+  }
+
+  /// Monta o conteúdo principal do Provador tratando os estados do seletor de modelos
+  Widget _construirCorpo(BuildContext context) {
+    // Se está carregando os modelos do catálogo pela primeira vez, exibe spinner centralizado
+    if (_carregandoModelos) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    // Se ocorreu erro ao carregar modelos e não há nenhum carregado, exibe estado de erro com retry
+    if (_erroModelos != null && _selecionado == null) {
+      return Center(
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 560),
-          // Permite rolagem do formulário e resultados
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.fromLTRB(16, 4, 16, 32),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                // Cartão de contexto com o modelo e a forma do calçado
-                Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: context.cardSurface,
-                    borderRadius: BorderRadius.circular(AppTheme.radiusLg),
-                    border: Border.all(color: context.hairline),
-                  ),
-                  child: Row(
-                    children: [
-                      // Nome e marca do calçado
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              c.nome,
-                              style: TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.w700,
-                                letterSpacing: -0.3,
-                                color: context.textStrong,
-                              ),
-                            ),
-                            const SizedBox(height: 2),
-                            Text(
-                              '${c.marca} · ${c.tipo.rotulo}',
-                              style: TextStyle(
-                                fontSize: 13,
-                                color: context.textMuted,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      // Pílula com o tipo da forma do calçado
-                      Pilula(
-                        texto: 'Forma ${c.forma.rotulo.toLowerCase()}',
-                        destaque: true,
-                      ),
-                    ],
-                  ),
+          child: EstadoErro(
+            titulo: 'Não foi possível abrir o provador',
+            mensagem: _erroModelos!,
+            aoTentar: () => _carregarModelos(),
+          ),
+        ),
+      );
+    }
+    // Se o catálogo ainda não tem modelos cadastrados, informa ao usuário
+    final c = _selecionado;
+    if (c == null) {
+      return Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 560),
+          child: const Padding(
+            padding: EdgeInsets.all(24),
+            child: FaixaAviso.alerta(
+              mensagem:
+                  'Nenhum calçado cadastrado no catálogo ainda para calcular o tamanho no provador.',
+            ),
+          ),
+        ),
+      );
+    }
+
+    // Indica se o vendedor pode alternar entre os modelos (modo aba da Navbar)
+    final modoSeletor = widget.calcado == null && _modelosDisponiveis.isNotEmpty;
+
+    return Center(
+      // Centraliza e limita a largura a 560px para boa leitura visual
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 560),
+        // Permite rolagem do formulário e resultados
+        child: SingleChildScrollView(
+          padding: EdgeInsets.fromLTRB(
+            16,
+            widget.mostrarAppBar ? 4 : 18,
+            16,
+            32,
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              // Cartão de contexto: exibe seletor de modelo na Navbar ou modelo fixo quando veio do detalhe
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: context.cardSurface,
+                  borderRadius: BorderRadius.circular(AppTheme.radiusLg),
+                  border: Border.all(color: context.hairline),
                 ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    // Quando aberto direto pela aba Provador da Navbar, permite escolher qualquer modelo
+                    if (modoSeletor) ...[
+                      DropdownButtonFormField<int>(
+                        initialValue: c.id,
+                        isExpanded: true,
+                        decoration: const InputDecoration(
+                          labelText: 'Modelo para provar',
+                          prefixIcon: Icon(Icons.inventory_2_outlined),
+                        ),
+                        // Monta a lista com todos os modelos ativos do catálogo
+                        items: [
+                          for (final m in _modelosDisponiveis)
+                            DropdownMenuItem<int>(
+                              value: m.id,
+                              child: Text(
+                                '${m.nome} · ${m.marca} (${m.estoque} un.)',
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                        ],
+                        // Ao trocar o modelo, atualiza o calçado de referência e limpa o resultado anterior
+                        onChanged: (novoId) {
+                          if (novoId == null) return;
+                          final encontrado = _modelosDisponiveis
+                              .where((m) => m.id == novoId)
+                              .firstOrNull;
+                          if (encontrado != null) {
+                            setState(() {
+                              _selecionado = encontrado;
+                              _resultado = null;
+                              _erro = null;
+                            });
+                          }
+                        },
+                      ),
+                      const SizedBox(height: 12),
+                    ],
+                    // Linha resumindo modelo, marca/tipo e pílula da forma anatômica
+                    Row(
+                      children: [
+                        // Nome e marca do calçado
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                c.nome,
+                                style: TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w700,
+                                  letterSpacing: -0.3,
+                                  color: context.textStrong,
+                                ),
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                '${c.marca} · ${c.tipo.rotulo}',
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  color: context.textMuted,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        // Pílula com o tipo da forma do calçado
+                        Pilula(
+                          texto: 'Forma ${c.forma.rotulo.toLowerCase()}',
+                          destaque: true,
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 16),
+
+              // Exibe o spinner de carregamento durante o cálculo
+              if (_calculando)
+                const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 28),
+                  child: Center(child: CircularProgressIndicator()),
+                ),
+
+              // Exibe faixa vermelha em caso de erro
+              if (_erro != null) FaixaAviso.erro(mensagem: _erro!),
+
+              // Se houver resultado calculado, exibe o painel de destaque com o número
+              if (_resultado != null)
+                _PainelResultado(calcado: c, resultado: _resultado!),
+
+              if (_resultado != null || _erro != null)
                 const SizedBox(height: 16),
-
-                // Exibe o spinner de carregamento durante o cálculo
-                if (_calculando)
-                  const Padding(
-                    padding: EdgeInsets.symmetric(vertical: 28),
-                    child: Center(child: CircularProgressIndicator()),
-                  ),
-
-                // Exibe faixa vermelha em caso de erro
-                if (_erro != null) FaixaAviso.erro(mensagem: _erro!),
-
-                // Se houver resultado calculado, exibe o painel de destaque com o número
-                if (_resultado != null)
-                  _PainelResultado(calcado: c, resultado: _resultado!),
-
-                if (_resultado != null || _erro != null)
-                  const SizedBox(height: 16),
 
                 // Formulário de entrada de medidas
                 Form(
@@ -336,8 +525,7 @@ class _RecomendacaoPageState extends State<RecomendacaoPage> {
             ),
           ),
         ),
-      ),
-    );
+      );
   }
 }
 

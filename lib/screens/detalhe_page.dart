@@ -366,13 +366,25 @@ class _DetalhePageState extends State<DetalhePage> {
     final podeGerenciar = Sessao.instance.usuario?.podeGerenciarProdutos ?? false;
     // Permissão de exclusão definitiva do catálogo (exclusivo do Proprietário)
     final podeExcluir = Sessao.instance.usuario?.podeExcluirProdutos ?? false;
+    // Detecta telas estreitas de celular para compactar os botões da AppBar
+    final telaEstreita = MediaQuery.sizeOf(context).width < 430;
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Detalhes do modelo'),
+        // Título da barra superior com truncamento seguro em celulares
+        title: const Text(
+          'Detalhes do modelo',
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
         actions: [
           // Botão para copiar ficha técnica de estoque
           IconButton(
+            visualDensity: telaEstreita ? VisualDensity.compact : null,
+            padding: EdgeInsets.symmetric(horizontal: telaEstreita ? 6 : 8),
+            constraints: telaEstreita
+                ? const BoxConstraints(minWidth: 34, minHeight: 34)
+                : null,
             icon: const Icon(Icons.content_copy_rounded, size: 20),
             tooltip: 'Copiar ficha de estoque',
             onPressed: _ocupado ? null : _copiarFichaEstoque,
@@ -380,10 +392,17 @@ class _DetalhePageState extends State<DetalhePage> {
           // Botão para editar o calçado (disponível apenas para Dono/Gerente)
           if (Sessao.instance.usuario?.podeGerenciarProdutos ?? false)
             IconButton(
+              visualDensity: telaEstreita ? VisualDensity.compact : null,
+              padding: EdgeInsets.symmetric(horizontal: telaEstreita ? 6 : 8),
+              constraints: telaEstreita
+                  ? const BoxConstraints(minWidth: 34, minHeight: 34)
+                  : null,
               icon: const Icon(Icons.edit_outlined, size: 21),
               tooltip: 'Editar modelo',
               onPressed: _ocupado ? null : _editar,
             ),
+          // Botão para alternar entre tema claro e escuro diretamente na tela de detalhe
+          BotaoAlternarTema(compacto: telaEstreita),
           // Botão de perfil do usuário
           const MarcaAppBar(),
         ],

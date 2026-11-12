@@ -1,8 +1,12 @@
 // Importa os componentes e estilos visuais do Flutter
 import 'package:flutter/material.dart';
 
+// Importa o modelo de usuário para verificar a permissão do e-mail mãe e traduzir cargos
+import '../models/usuario.dart';
 // Importa o serviço de API para cadastro de novos usuários
 import '../services/api_service.dart';
+// Importa o gerenciador da sessão ativa para validar o e-mail mãe conectado
+import '../services/sessao.dart';
 // Importa o tema e atalhos de cor do aplicativo
 import '../theme/app_theme.dart';
 // Importa faixas visuais de aviso e erro
@@ -60,6 +64,15 @@ class _CriarContaPageState extends State<CriarContaPage> {
 
   /// Executa o fluxo de validação e envio dos dados para criação da conta na API
   Future<void> _criarConta() async {
+    // Impede qualquer tentativa caso o usuário logado não seja o e-mail mãe autorizado
+    if (!(Sessao.instance.usuario?.podeCriarContas ?? false)) {
+      setState(() {
+        _erro =
+            'Apenas a conta administradora (${Usuario.emailMae}) pode criar novas contas.';
+      });
+      return;
+    }
+
     // Valida os campos de entrada do formulário
     if (!(_formKey.currentState?.validate() ?? false)) return;
 
@@ -86,14 +99,16 @@ class _CriarContaPageState extends State<CriarContaPage> {
       // Garante que a tela continua montada antes de interagir com a interface
       if (!mounted) return;
 
-      // Exibe notificação de confirmação no rodapé
+      // Exibe notificação de confirmação no rodapé mantendo o administrador logado
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Conta criada com sucesso. Entre com seu e-mail e senha.'),
+        SnackBar(
+          content: Text(
+            'Conta $email (${Usuario.rotuloPerfil(_role)}) criada com sucesso.',
+          ),
         ),
       );
 
-      // Fecha a tela de cadastro e devolve o e-mail cadastrado para a tela de login
+      // Fecha a tela de cadastro e retorna para o painel da loja
       Navigator.of(context).pop(email);
     } on ApiException catch (e) {
       // Em caso de falha (ex: e-mail já cadastrado - erro 409), captura e exibe na tela
@@ -109,12 +124,82 @@ class _CriarContaPageState extends State<CriarContaPage> {
   Widget build(BuildContext context) {
     // Detecta se está renderizando no modo escuro
     final isDark = context.isDark;
+    // Confere se o usuário conectado na sessão é o e-mail mãe autorizado a criar contas
+    final autorizado = Sessao.instance.usuario?.podeCriarContas ?? false;
 
     // Estrutura principal da tela com barra de navegação superior
     return Scaffold(
-      appBar: AppBar(title: const Text('Criar conta')),
+      appBar: AppBar(
+        title: const Text('Criar nova conta'),
+        // Inclui o botão de alternar entre tema claro e tema escuro nesta tela
+        actions: const [BotaoAlternarTema()],
+      ),
       body: SafeArea(
-        child: Center(
+        // Caso alguém acesse esta tela sem ser o e-mail mãe, exibe bloqueio informativo com botão Voltar
+        child: !autorizado
+            ? Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 420),
+                  child: Padding(
+                    padding: const EdgeInsets.all(20),
+                    child: Container(
+                      padding: const EdgeInsets.all(24),
+                      decoration: BoxDecoration(
+                        color: context.cardSurface,
+                        borderRadius: BorderRadius.circular(AppTheme.radiusLg),
+                        border: Border.all(color: context.hairline),
+                      ),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          // Ícone circular de acesso restrito
+                          Container(
+                            width: 56,
+                            height: 56,
+                            decoration: BoxDecoration(
+                              color: AppColors.danger.withValues(alpha: 0.12),
+                              shape: BoxShape.circle,
+                            ),
+                            child: const Icon(
+                              Icons.lock_outline_rounded,
+                              size: 28,
+                              color: AppColors.danger,
+                            ),
+                          ),
+                          const SizedBox(height: 16),
+                          // Título explicativo da restrição
+                          Text(
+                            'Acesso restrito',
+                            style: TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.w700,
+                              color: context.textStrong,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          // Descrição clara informando qual conta possui permissão
+                          Text(
+                            'Apenas a conta administradora (${Usuario.emailMae}) pode cadastrar novos usuários na loja.',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              fontSize: 13.5,
+                              height: 1.4,
+                              color: context.textMuted,
+                            ),
+                          ),
+                          const SizedBox(height: 20),
+                          // Botão para fechar a tela e retornar
+                          ElevatedButton(
+                            onPressed: () => Navigator.of(context).pop(),
+                            child: const Text('Voltar'),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              )
+            : Center(
           // Permite rolagem vertical caso o teclado seja aberto
           child: SingleChildScrollView(
             padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 28),
@@ -160,9 +245,9 @@ class _CriarContaPageState extends State<CriarContaPage> {
                             ),
                           ),
                           const SizedBox(height: 4),
-                          // Subtítulo descritivo
+                          // Subtítulo descritivo para cadastro interno da equipe
                           Text(
-                            'Informe seus dados para acessar o sistema.',
+                            'Cadastre um colaborador com cargo, e-mail e senha.',
                             style: TextStyle(
                               fontSize: 13.5,
                               color: context.textMuted,
@@ -220,15 +305,14 @@ class _CriarContaPageState extends State<CriarContaPage> {
                             },
                           ),
                           const SizedBox(height: 16),
-                          // Campo de digitação de E-mail
+                          // Campo de digitação de E-mail do novo colaborador
                           TextFormField(
                             controller: _emailController,
                             keyboardType: TextInputType.emailAddress,
                             textInputAction: TextInputAction.next,
-                            autofillHints: const [AutofillHints.newUsername],
                             decoration: const InputDecoration(
                               labelText: 'E-mail',
-                              hintText: 'voce@loja.com',
+                              hintText: 'colaborador@loja.com',
                               prefixIcon: Icon(Icons.mail_outline_rounded),
                             ),
                             // Validação de formato de e-mail
@@ -244,12 +328,11 @@ class _CriarContaPageState extends State<CriarContaPage> {
                             },
                           ),
                           const SizedBox(height: 16),
-                          // Campo de digitação da Senha
+                          // Campo de digitação da Senha inicial da nova conta
                           TextFormField(
                             controller: _senhaController,
                             obscureText: _ocultarSenha,
                             textInputAction: TextInputAction.next,
-                            autofillHints: const [AutofillHints.newPassword],
                             decoration: InputDecoration(
                               labelText: 'Senha',
                               helperText: 'Mínimo de 8 caracteres',
@@ -343,12 +426,12 @@ class _CriarContaPageState extends State<CriarContaPage> {
                             ),
                           ),
                           const SizedBox(height: 8),
-                          // Botão de texto para retornar à tela de Login
+                          // Botão de texto para fechar o cadastro e retornar à tela anterior
                           TextButton(
                             onPressed: _salvando
                                 ? null
                                 : () => Navigator.of(context).pop(),
-                            child: const Text('Voltar para o login'),
+                            child: const Text('Voltar'),
                           ),
                         ],
                       ),
