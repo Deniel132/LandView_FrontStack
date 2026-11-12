@@ -94,7 +94,20 @@ void main() {
       expect(vendedor.perfilRotulo, equals('Vendedor'));
       expect(vendedor.podeGerenciarProdutos, isFalse);
       expect(vendedor.podeExcluirProdutos, isFalse);
-      expect(vendedor.podeVerAuditoria, isFalse);
+      // O Proprietário principal com o e-mail mãe (admin@gmail.com) pode criar contas da equipe
+      const mae = Usuario(
+        id: 34,
+        nome: 'admin',
+        email: Usuario.emailMae,
+        perfil: 'OWNER',
+      );
+      expect(mae.podeCriarContas, isTrue);
+
+      // Outro Proprietário sem ser o e-mail mãe NÃO recebe permissão de criar contas
+      expect(proprietario.podeCriarContas, isFalse);
+      // Gerente e Vendedor também NÃO podem criar contas
+      expect(gerente.podeCriarContas, isFalse);
+      expect(vendedor.podeCriarContas, isFalse);
     });
 
     test('3. Isolamento de Sessão, Logout Seguro e Expiração de Token (401)', () {

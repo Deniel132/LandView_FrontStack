@@ -1,7 +1,5 @@
 // Importa os componentes e estilos visuais do Flutter
 import 'package:flutter/material.dart';
-// Importa o aplicativo principal para alternar tema
-import '../main.dart';
 // Importa o modelo de calçado
 import '../models/calcado.dart';
 // Importa o cliente de API para requisições de listagem
@@ -51,8 +49,18 @@ enum _Ordenacao {
 /// (Tênis/Chuteira) e por situação de estoque (baixo, esgotado, excesso), ordenar por preço/estoque/nome,
 /// visualizar métricas gerais de unidades e valor imobilizado e navegar para o detalhe ou cadastro.
 class CatalogoPage extends StatefulWidget {
-  // Construtor constante da página de catálogo
-  const CatalogoPage({super.key});
+  /// Controla se a tela exibe sua própria AppBar superior (falso quando embutida na Navbar principal)
+  final bool mostrarAppBar;
+
+  /// Notificador opcional que dispara atualização silenciosa quando o botão Atualizar da Navbar é pressionado
+  final ValueNotifier<int>? gatilhoAtualizacao;
+
+  // Construtor constante da página de catálogo com suporte ao modo embutido na Navbar
+  const CatalogoPage({
+    super.key,
+    this.mostrarAppBar = true,
+    this.gatilhoAtualizacao,
+  });
 
   @override
   State<CatalogoPage> createState() => _CatalogoPageState();
@@ -64,6 +72,9 @@ class _CatalogoPageState extends State<CatalogoPage> {
 
   // Flag que controla a exibição do spinner de carregamento inicial
   bool _carregando = true;
+
+  // Flag que trava novos toques enquanto navega para outra tela (evita rotas duplicadas)
+  bool _navegando = false;
 
   // Mensagem de erro caso a requisição falhe
   String? _erro;
@@ -86,15 +97,35 @@ class _CatalogoPageState extends State<CatalogoPage> {
   @override
   void initState() {
     super.initState();
+    // Registra o ouvinte de atualização da Navbar quando embutida
+    widget.gatilhoAtualizacao?.addListener(_aoDispararGatilho);
     // Dispara a requisição de busca de calçados ao entrar na tela
     _carregar();
   }
 
   @override
+  void didUpdateWidget(covariant CatalogoPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // Atualiza o ouvinte caso o notificador seja substituído
+    if (oldWidget.gatilhoAtualizacao != widget.gatilhoAtualizacao) {
+      oldWidget.gatilhoAtualizacao?.removeListener(_aoDispararGatilho);
+      widget.gatilhoAtualizacao?.addListener(_aoDispararGatilho);
+    }
+  }
+
+  @override
   void dispose() {
+    // Remove o ouvinte da Navbar ao desmontar a tela
+    widget.gatilhoAtualizacao?.removeListener(_aoDispararGatilho);
     // Libera a memória do controlador de busca
     _buscaController.dispose();
     super.dispose();
+  }
+
+  /// Recarrega os modelos do catálogo quando a Navbar solicitar atualização
+  void _aoDispararGatilho() {
+    // Atualiza silenciosamente se já houver modelos na tela
+    _carregar(silencioso: _calcados.isNotEmpty);
   }
 
   /// Busca a lista atualizada de calçados na API (fonte da verdade)
@@ -244,25 +275,44 @@ class _CatalogoPageState extends State<CatalogoPage> {
     await _carregar(silencioso: true);
   }
 
-  /// Abre a tela de detalhes do calçado
+  /// Abre a tela de detalhes do calçado evitando abertura duplicada em cliques múltiplos
   Future<void> _abrirDetalhe(Calcado calcado) async {
-    final resultado = await Navigator.of(context).push<String>(
-      MaterialPageRoute(builder: (_) => DetalhePage(calcado: calcado)),
-    );
-    await _aposVoltar(resultado);
+    // Se já está navegando para outro produto ou tela, ignora o toque repetido
+    if (_navegando) return;
+    // Ativa a trava de navegação
+    _navegando = true;
+    try {
+      // Empilha a tela de detalhes e aguarda eventual mensagem de retorno
+      final resultado = await Navigator.of(context).push<String>(
+        MaterialPageRoute(builder: (_) => DetalhePage(calcado: calcado)),
+      );
+      await _aposVoltar(resultado);
+    } finally {
+      // Libera a trava ao retornar para o catálogo
+      _navegando = false;
+    }
   }
 
-  /// Abre a tela de cadastro para inclusão de novo produto
+  /// Abre a tela de cadastro para inclusão de novo produto evitando abertura duplicada
   Future<void> _abrirCadastro() async {
-    final resultado = await Navigator.of(
-      context,
-    ).push<String>(MaterialPageRoute(builder: (_) => const CadastroPage()));
-    await _aposVoltar(resultado);
+    // Impede abrir múltiplas telas de cadastro por duplo clique
+    if (_navegando) return;
+    // Ativa a trava de navegação
+    _navegando = true;
+    try {
+      // Empilha a tela de cadastro e aguarda eventual mensagem de sucesso
+      final resultado = await Navigator.of(
+        context,
+      ).push<String>(MaterialPageRoute(builder: (_) => const CadastroPage()));
+      await _aposVoltar(resultado);
+    } finally {
+      // Libera a trava ao retornar para o catálogo
+      _navegando = false;
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    final isDark = context.isDark;
     // Identifica se a altura disponível é compacta (telas baixas)
     final compacto = MediaQuery.sizeOf(context).height < 520;
 
@@ -276,61 +326,53 @@ class _CatalogoPageState extends State<CatalogoPage> {
     );
 
     return Scaffold(
-      appBar: AppBar(
-        toolbarHeight: 68,
-        title: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            // Título principal com truncamento seguro em telas estreitas
-            Text(
-              'Catálogo & Estoque',
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                fontSize: 16.5,
-                fontWeight: FontWeight.w700,
-                letterSpacing: -0.3,
-                color: context.textStrong,
+      // Oculta a AppBar própria quando embutida na Navbar principal
+      appBar: widget.mostrarAppBar
+          ? AppBar(
+              toolbarHeight: 68,
+              title: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // Título principal com truncamento seguro em telas estreitas
+                  Text(
+                    'Catálogo & Estoque',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 16.5,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: -0.3,
+                      color: context.textStrong,
+                    ),
+                  ),
+                  // Subtítulo com truncamento seguro para evitar quebra em celulares
+                  Text(
+                    'Gestão de modelos, estoque e tabela de medidas',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(fontSize: 12, color: context.textMuted),
+                  ),
+                ],
               ),
-            ),
-            // Subtítulo com truncamento seguro para evitar quebra em celulares
-            Text(
-              'Gestão de modelos, estoque e tabela de medidas',
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(fontSize: 12, color: context.textMuted),
-            ),
-          ],
-        ),
-        actions: [
-          // Botão para atualizar a listagem
-          IconButton(
-            icon: const Icon(Icons.refresh_rounded, size: 22),
-            tooltip: 'Atualizar lista',
-            onPressed: _carregando ? null : () => _carregar(),
-          ),
-          // Botão para alternar tema
-          IconButton(
-            icon: Icon(
-              isDark ? Icons.light_mode_outlined : Icons.dark_mode_outlined,
-              size: 21,
-            ),
-            tooltip: isDark ? 'Usar tema claro' : 'Usar tema escuro',
-            onPressed: () {
-              MyApp.themeNotifier.value = isDark
-                  ? ThemeMode.light
-                  : ThemeMode.dark;
-            },
-          ),
-          // Botão de perfil do usuário
-          const MarcaAppBar(),
-        ],
-        bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(1),
-          child: Container(color: context.hairline, height: 1),
-        ),
-      ),
+              actions: [
+                // Botão para atualizar a listagem
+                IconButton(
+                  icon: const Icon(Icons.refresh_rounded, size: 22),
+                  tooltip: 'Atualizar lista',
+                  onPressed: _carregando ? null : () => _carregar(),
+                ),
+                // Botão reutilizável para alternar tema claro/escuro
+                const BotaoAlternarTema(),
+                // Botão de perfil do usuário
+                const MarcaAppBar(),
+              ],
+              bottom: PreferredSize(
+                preferredSize: const Size.fromHeight(1),
+                child: Container(color: context.hairline, height: 1),
+              ),
+            )
+          : null,
       body: Center(
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 720),

@@ -1,7 +1,7 @@
 // Importa os componentes e widgets da biblioteca visual Material Design do Flutter
 import 'package:flutter/material.dart';
-// Importa o painel principal exibido quando o usuário já está autenticado
-import 'screens/dashboard_page.dart';
+// Importa o painel principal com Navbar exibido quando o usuário já está autenticado
+import 'screens/navegacao_page.dart';
 // Importa a tela inicial de autenticação/login
 import 'screens/login_page.dart';
 // Importa o serviço gerenciador da sessão ativa, token e persistência no disco
@@ -65,8 +65,8 @@ class MyApp extends StatelessWidget {
         darkTheme: AppTheme.dark(),
         // Define o modo atual (Light ou Dark)
         themeMode: modo,
-        // Se já houver sessão salva (F5), entra direto no Dashboard; caso contrário, vai para o Login
-        home: Sessao.instance.logado ? const DashboardPage() : const LoginPage(),
+        // Se já houver sessão salva (F5), entra direto na navegação com Navbar; caso contrário, vai para o Login
+        home: Sessao.instance.logado ? const NavegacaoPage() : const LoginPage(),
       ),
     );
   }

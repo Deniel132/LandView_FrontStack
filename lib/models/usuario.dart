@@ -95,11 +95,19 @@ class Usuario {
   /// Permissão para cadastrar novos modelos, editar dados e ajustar/repor quantidades de estoque (Proprietário e Gerente)
   bool get podeGerenciarProdutos => isOwner || isManager;
 
+  /// E-mail principal ("e-mail mãe") autorizado a cadastrar novas contas de colaboradores no sistema.
+  static const String emailMae = 'admin@gmail.com';
+
   /// Permissão restrita para excluir definitivamente um modelo do catálogo (exclusivo do Proprietário)
   bool get podeExcluirProdutos => isOwner;
 
   /// Permissão restrita para auditar o histórico geral de saídas e baixas por usuário (exclusivo do Proprietário)
   bool get podeVerAuditoria => isOwner;
+
+  /// Permissão exclusiva do e-mail mãe (Proprietário principal) para cadastrar novos colaboradores da loja.
+  bool get podeCriarContas =>
+      // Exige que o usuário tenha cargo de Proprietário e seja exatamente o e-mail mãe cadastrado.
+      isOwner && email.trim().toLowerCase() == emailMae;
 
   /// Separa o nome em palavras individuais, ignorando espaços múltiplos
   List<String> get _partes =>

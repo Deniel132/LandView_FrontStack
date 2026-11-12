@@ -1,7 +1,5 @@
 // Importa os componentes e estilos visuais do Flutter
 import 'package:flutter/material.dart';
-// Importa o aplicativo principal para alternar tema e acessar navegadores
-import '../main.dart';
 // Importa o serviço de API para autenticação
 import '../services/api_service.dart';
 // Importa o tema e atalhos de cor da aplicação
@@ -12,10 +10,8 @@ import '../widgets/contato_loja.dart';
 import '../widgets/estados.dart';
 // Importa o logotipo da marca
 import '../widgets/logo_loja.dart';
-// Importa a tela de cadastro/criação de conta
-import 'criar_conta_page.dart';
-// Importa o dashboard principal da loja
-import 'dashboard_page.dart';
+// Importa a navegação principal com Navbar da loja
+import 'navegacao_page.dart';
 
 /// Tela de entrada (Login) do aplicativo.
 /// Coleta e-mail e senha do atendente/vendedor, envia para a rota `POST /api/user/login` do FastAPI
@@ -82,9 +78,9 @@ class _LoginPageState extends State<LoginPage> {
       // Garante que o widget ainda está montado na árvore antes de navegar
       if (!mounted) return;
 
-      // Navega para o Dashboard substituindo a tela de login na pilha de rotas
+      // Navega para a tela principal com Navbar substituindo a tela de login na pilha de rotas
       Navigator.of(context).pushReplacement(
-        MaterialPageRoute(builder: (_) => const DashboardPage()),
+        MaterialPageRoute(builder: (_) => const NavegacaoPage()),
       );
     } on ApiException catch (e) {
       // Captura falhas retornadas pela API (ex: credenciais incorretas)
@@ -94,22 +90,6 @@ class _LoginPageState extends State<LoginPage> {
         _erro = e.mensagem;
       });
     }
-  }
-
-  /// Abre a tela de cadastro e, caso uma nova conta seja criada com sucesso, preenche o e-mail no login
-  Future<void> _abrirCriarConta() async {
-    // Navega para CriarContaPage aguardando o e-mail cadastrado como retorno
-    final email = await Navigator.of(
-      context,
-    ).push<String>(MaterialPageRoute(builder: (_) => const CriarContaPage()));
-
-    // Se retornou com um e-mail válido, preenche o campo de e-mail e foca na senha
-    if (!mounted || email == null) return;
-    setState(() {
-      _emailController.text = email;
-      _senhaController.clear();
-      _erro = null;
-    });
   }
 
   @override
@@ -275,18 +255,12 @@ class _LoginPageState extends State<LoginPage> {
                                       : const Text('Entrar'),
                                 ),
                               ),
-                              const SizedBox(height: 8),
-                              // Botão de texto para navegação até a tela de criação de conta
-                              TextButton(
-                                onPressed: _entrando ? null : _abrirCriarConta,
-                                child: const Text('Criar uma conta'),
-                              ),
                             ],
                           ),
                         ),
                       ),
                       const SizedBox(height: 20),
-                      // Mensagem de rodapé sobre o acesso restrito
+                      // Mensagem de rodapé sobre o acesso restrito da equipe interna
                       Text(
                         'Acesso restrito à equipe da loja.',
                         textAlign: TextAlign.center,
@@ -304,22 +278,10 @@ class _LoginPageState extends State<LoginPage> {
               ),
             ),
             // Botão fixado no topo direito para alternar entre tema claro e tema escuro
-            Positioned(
+            const Positioned(
               top: 8,
               right: 8,
-              child: IconButton(
-                icon: Icon(
-                  isDark ? Icons.light_mode_outlined : Icons.dark_mode_outlined,
-                  size: 21,
-                ),
-                tooltip: isDark ? 'Usar tema claro' : 'Usar tema escuro',
-                onPressed: () {
-                  // Alterna o valor global do notificador de tema
-                  MyApp.themeNotifier.value = isDark
-                      ? ThemeMode.light
-                      : ThemeMode.dark;
-                },
-              ),
+              child: BotaoAlternarTema(),
             ),
           ],
         ),

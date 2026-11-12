@@ -51,6 +51,14 @@ class ApiService {
   })? registrarVendaTeste;
   // Callback opcional para interceptar a atualização de calçado em testes de widget sem tráfego de rede.
   static Future<Calcado> Function(Calcado calcado)? atualizarTeste;
+  // Callback opcional para interceptar o carregamento do painel em testes de widget sem tráfego de rede.
+  static Future<Dashboard> Function()? dashboardTeste;
+  // Callback opcional para interceptar a busca detalhada de calçado em testes de widget sem tráfego de rede.
+  static Future<Calcado> Function(int id)? buscarTeste;
+  // Callback opcional para interceptar a listagem de calçados em testes de widget sem tráfego de rede.
+  static Future<List<Calcado>> Function()? listarTeste;
+  // Callback opcional para interceptar a listagem de saídas em testes de widget sem tráfego de rede.
+  static Future<List<SaidaEstoque>> Function()? listarSaidasTeste;
 
   /// URL base oficial da API no Render (sem a barra final nem /docs).
   /// Permite apontar para outro servidor (como localhost) via:
@@ -315,6 +323,8 @@ class ApiService {
 
   /// Retorna os dados consolidados do painel da loja (totais, mais vendidos, estoque baixo/alto e extremos).
   Future<Dashboard> dashboard() async {
+    // Caso um callback de teste esteja ativo, devolve os dados simulados sem tráfego de rede.
+    if (dashboardTeste != null) return dashboardTeste!();
     return _dashboardIntegrado();
   }
 
@@ -323,6 +333,8 @@ class ApiService {
   /// Retorna a listagem de todos os modelos de calçados cadastrados no catálogo
   /// consumindo a rota oficial `GET /product/all` da API no Render.
   Future<List<Calcado>> listar() async {
+    // Caso um callback de teste esteja ativo, devolve a lista simulada sem tráfego de rede.
+    if (listarTeste != null) return listarTeste!();
     // Delega para o carregamento integrado com sincronização de grade e estoque.
     return _listarIntegrado();
   }
@@ -415,6 +427,8 @@ class ApiService {
   /// Consulta um calçado específico pelo ID combinando produto (`GET /product/{id}`),
   /// categoria (`GET /category/{id}`) e quantidade de estoque (`GET /stock/{id}`).
   Future<Calcado> buscar(int id) async {
+    // Caso um callback de teste esteja ativo, devolve o calçado simulado sem tráfego de rede.
+    if (buscarTeste != null) return buscarTeste!(id);
     // 1. Consulta a rota GET /product/{id} na API oficial do Render.
     Map<String, dynamic>? produtoRender;
     try {
@@ -729,6 +743,8 @@ class ApiService {
     int? idProduct,
     int? idStock,
   }) async {
+    // Caso um callback de teste esteja ativo, devolve as saídas simuladas sem tráfego de rede.
+    if (listarSaidasTeste != null) return listarSaidasTeste!();
     // Constrói os parâmetros de consulta na URL.
     final queryParams = <String, String>{
       'page': page.toString(),
@@ -958,13 +974,34 @@ class ApiService {
           .timeout(_timeout),
     ]);
 
-    // Decodifica as listas retornadas em paralelo.
-    final produtosBanco =
-        jsonDecode(utf8.decode(respostas[0].bodyBytes)) as List<dynamic>;
-    final categorias =
-        jsonDecode(utf8.decode(respostas[1].bodyBytes)) as List<dynamic>;
-    final estoques =
-        jsonDecode(utf8.decode(respostas[2].bodyBytes)) as List<dynamic>;
+    // Decodifica com segurança uma lista JSON retornada pelo banco, evitando FormatException em falhas HTTP.
+    List<dynamic> decodificarLista(http.Response resp) {
+      // Verifica se o status HTTP indica sucesso e se há conteúdo no corpo.
+      if (resp.statusCode < 200 ||
+          resp.statusCode >= 300 ||
+          resp.bodyBytes.isEmpty) {
+        return const [];
+      }
+      // Converte bytes UTF-8 para texto e realiza o parse JSON protegido.
+      final texto = utf8.decode(resp.bodyBytes).trim();
+      if (texto.isEmpty) return const [];
+      final decoded = jsonDecode(texto);
+      return decoded is List<dynamic> ? decoded : const [];
+    }
+
+    // Se nenhuma das consultas essenciais de produto teve resposta válida e não há lista da API, informa erro de rede.
+    if (produtosApi == null &&
+        (respostas[0].statusCode < 200 || respostas[0].statusCode >= 300)) {
+      throw ApiException(
+        'Não foi possível carregar os produtos no momento.',
+        status: respostas[0].statusCode,
+      );
+    }
+
+    // Decodifica as listas retornadas em paralelo com segurança.
+    final produtosBanco = decodificarLista(respostas[0]);
+    final categorias = decodificarLista(respostas[1]);
+    final estoques = decodificarLista(respostas[2]);
 
     // Indexa o product_category_id por ID do produto para enriquecer o retorno de GET /product/all.
     final categoriaPorProdutoId = <int, int?>{

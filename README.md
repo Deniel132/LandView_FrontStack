@@ -50,12 +50,13 @@ flutter run -d chrome --web-port=8000
 
 ### Contas para login
 
+A criação de novas contas fica restrita ao **e-mail mãe** (`admin@gmail.com`)
+pelo menu da conta após o login (não há botão público na tela inicial).
+
 | E-mail | Senha |
 | --- | --- |
 | `vendedor@loja.com` | `12345678` |
 | `user2333@example.com` | `adm123` |
-
-Também é possível criar uma conta nova pela tela **"Criar uma conta"**.
 
 ---
 
@@ -79,15 +80,30 @@ em `http://127.0.0.1:8000`.
 
 ### Login, conta e permissões por cargo (RBAC)
 - Login com verificação real de senha (senha errada é recusada com
-  "E-mail ou senha incorretos").
-- Criação de conta pela tela **Criar uma conta**, escolhendo um dos **3 cargos internos da loja**:
+  "E-mail ou senha incorretos"). A tela inicial exibe apenas o formulário de
+  entrada (**sem criação pública de conta**).
+- Criação de novas contas restrita ao **e-mail mãe (`admin@gmail.com`)**: ao
+  acessar o menu do avatar no canto superior direito, aparece a opção **Criar
+  nova conta**, permitindo cadastrar colaboradores em um dos **3 cargos internos
+  da loja**:
   - **Vendedor(a) (`SELLER`)**: consulta o painel e o catálogo, utiliza o **Provador Virtual** e **registra vendas** (dando baixa automática no estoque).
   - **Gerente (`USER`)**: possui todas as permissões do vendedor e também pode **cadastrar novos modelos**, **editar modelos/preços** e **repor/ajustar o estoque** (inclusive pelo atalho `+5 un.` do painel e por numeração).
   - **Proprietário(a) (`OWNER`)**: acesso total irrestrito, sendo o único cargo autorizado a **excluir definitivamente modelos** do catálogo e visualizar o **Histórico de Auditoria de Saídas**.
 - **Avatar da conta** no canto superior direito de todas as telas, com as
   iniciais do usuário. O menu mostra nome, cargo na loja (`Proprietário`,
-  `Gerente` ou `Vendedor`), e-mail, **Alterar nome de exibição** e **Sair**.
+  `Gerente` ou `Vendedor`), e-mail, **Alterar nome de exibição**, **Criar nova
+  conta** (visível somente para o e-mail mãe `admin@gmail.com`) e **Sair**.
 - Sessão expirada (401 da API) devolve o usuário automaticamente ao login.
+
+### Navegação responsiva (Navbar)
+- Barra de navegação fixa com acesso em 1 clique para **Painel**, **Catálogo**,
+  **Provador** (com seletor direto de modelo) e **Saídas** (auditoria exclusiva
+  do Proprietário).
+- No computador (`>= 840 px`), a Navbar aparece integrada na barra superior; no
+  celular Android/iOS, transforma-se automaticamente em uma `NavigationBar` fixa
+  no rodapé.
+- Ao tocar em qualquer modelo no **Painel**, um overlay de carregamento bloqueia
+  cliques repetidos para evitar abertura duplicada de telas.
 
 ### Painel da loja (dashboard)
 - Saudação com o nome do usuário e data.
@@ -260,12 +276,14 @@ lib/
 │   └── venda.dart                # Venda registrada
 ├── screens/
 │   ├── login_page.dart           # Login
-│   ├── criar_conta_page.dart     # Cadastro de conta
-│   ├── dashboard_page.dart       # Painel da loja e auditoria de saídas
+│   ├── navegacao_page.dart       # Navbar responsiva (Painel, Catálogo, Provador, Saídas)
+│   ├── criar_conta_page.dart     # Cadastro de conta (exclusivo do e-mail mãe)
+│   ├── dashboard_page.dart       # Painel da loja
 │   ├── catalogo_page.dart        # Catálogo, filtros e ordenação
 │   ├── detalhe_page.dart         # Detalhe, venda, estoque por tamanho
 │   ├── cadastro_page.dart        # Cadastro/edição de modelo e grade
-│   └── recomendacao_page.dart    # Provador
+│   ├── recomendacao_page.dart    # Provador (com ou sem calçado prévio)
+│   └── saidas_page.dart          # Auditoria de saídas de estoque (Proprietário)
 ├── services/
 │   ├── api_service.dart          # Única porta de rede (Render + Supabase)
 │   ├── api_exception.dart        # Erro padronizado da API
@@ -278,19 +296,22 @@ lib/
 └── widgets/
     ├── cartao_calcado.dart       # Card do catálogo
     ├── contato_loja.dart         # Rodapé do sistema
-    ├── estados.dart              # Carregando, erro, vazio e avisos
+    ├── estados.dart              # Carregando, overlay, erro, vazio e avisos
     ├── logo_loja.dart            # Logo e avatar da conta (MarcaAppBar)
     └── pilula.dart               # Etiquetas de status
 
 test/
 ├── fluxo_daniel_test.dart               # Teste ponta a ponta (cadastro, login, produto, venda e auditoria)
+├── provador_estimativa_test.dart        # Estimativa do pé pela numeração habitual
 ├── validacao_venda_estoque_test.dart    # Validação de baixa por numeração e persistência no banco
 ├── seguranca_test.dart                  # Testes de segurança (criptografia, RBAC, sessão, sanitização e login)
 ├── models/api_models_test.dart          # Conversão de JSON e regras de negócio de modelos
 └── widgets/
     ├── contato_loja_test.dart           # Asset do logo e rodapé
-    ├── criar_conta_page_test.dart       # Tela de criar conta
-    └── detalhe_venda_test.dart          # Fluxo de venda e baixa de estoque na tela de detalhe
+    ├── criar_conta_page_test.dart       # Restrição do e-mail mãe e validação de cadastro
+    ├── dashboard_clique_duplo_test.dart # Bloqueio de cliques múltiplos e loading ao abrir produto
+    ├── detalhe_venda_test.dart          # Fluxo de venda e baixa de estoque na tela de detalhe
+    └── navegacao_navbar_test.dart       # Comportamento responsivo da Navbar (desktop/celular)
 ```
 
 Dependências principais: `http` (rede), `shared_preferences` (persistência local de sessão e preferências), `file_selector` (foto do computador) e `url_launcher`.

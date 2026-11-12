@@ -3,8 +3,12 @@ import 'package:flutter/material.dart';
 
 // Importa as constantes da loja (caminho do asset do logotipo e nomes)
 import '../config/loja.dart';
+// Importa o ponto de entrada do aplicativo para alternar dinamicamente entre tema claro e escuro
+import '../main.dart';
 // Importa o modelo de usuário autenticado
 import '../models/usuario.dart';
+// Importa a tela de criação de contas da equipe (exclusiva do e-mail mãe)
+import '../screens/criar_conta_page.dart';
 // Importa a tela de login para redirecionamento após logout
 import '../screens/login_page.dart';
 // Importa o gerenciador da sessão ativa
@@ -131,6 +135,16 @@ class MarcaAppBar extends StatelessWidget {
     }
   }
 
+  /// Abre a tela de criação de nova conta da equipe (permitida somente ao e-mail mãe)
+  Future<void> _abrirCriarConta(BuildContext context, Usuario? usuario) async {
+    // Bloqueia o acesso caso o usuário logado não seja o e-mail mãe autorizado
+    if (!(usuario?.podeCriarContas ?? false)) return;
+    // Navega para a tela de cadastro de conta aguardando o e-mail recém-criado
+    await Navigator.of(context).push<String>(
+      MaterialPageRoute(builder: (_) => const CriarContaPage()),
+    );
+  }
+
   /// Realiza o logout do usuário limpando a sessão e redirecionando para a tela de login
   void _sair(BuildContext context) {
     // Limpa token e usuário da memória
@@ -169,8 +183,13 @@ class MarcaAppBar extends StatelessWidget {
             ),
             // Trata as opções selecionadas pelo usuário
             onSelected: (valor) {
+              // Abre diálogo de alteração do nome de exibição
               if (valor == 'editar_nome') {
                 _editarNome(context, usuario);
+              // Abre a tela de criação de conta (exclusivo do e-mail mãe)
+              } else if (valor == 'criar_conta') {
+                _abrirCriarConta(context, usuario);
+              // Encerra a sessão e volta para o login
               } else if (valor == 'sair') {
                 _sair(context);
               }
@@ -220,20 +239,53 @@ class MarcaAppBar extends StatelessWidget {
                 value: 'editar_nome',
                 child: Row(
                   children: [
+                    // Ícone de edição de perfil
                     Icon(Icons.edit_outlined, size: 18),
                     SizedBox(width: 10),
-                    Text('Alterar nome de exibição'),
+                    // Flexible evita overflow horizontal em menus com fontes maiores
+                    Flexible(
+                      child: Text(
+                        'Alterar nome de exibição',
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
                   ],
                 ),
               ),
+              // Opção exclusiva do e-mail mãe (admin@gmail.com) para cadastrar contas de colaboradores
+              if (usuario?.podeCriarContas ?? false)
+                const PopupMenuItem<String>(
+                  value: 'criar_conta',
+                  child: Row(
+                    children: [
+                      // Ícone representativo de adição de colaborador
+                      Icon(Icons.person_add_alt_1_outlined, size: 18),
+                      SizedBox(width: 10),
+                      // Rótulo da ação no menu da conta protegido contra overflow
+                      Flexible(
+                        child: Text(
+                          'Criar nova conta',
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
               // Opção para desconectar
               const PopupMenuItem<String>(
                 value: 'sair',
                 child: Row(
                   children: [
+                    // Ícone de saída do sistema
                     Icon(Icons.logout_rounded, size: 18),
                     SizedBox(width: 10),
-                    Text('Sair'),
+                    // Rótulo da ação protegido contra overflow
+                    Flexible(
+                      child: Text(
+                        'Sair',
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
                   ],
                 ),
               ),
@@ -256,6 +308,45 @@ class MarcaAppBar extends StatelessWidget {
             ),
           ),
         );
+      },
+    );
+  }
+}
+
+/// Botão reutilizável para alternar entre tema claro e tema escuro em qualquer tela do aplicativo.
+class BotaoAlternarTema extends StatelessWidget {
+  /// Reduz o espaçamento horizontal em barras de celular com largura estreita
+  final bool compacto;
+
+  /// Construtor constante com espaçamento padrão ou compacto para telas pequenas
+  const BotaoAlternarTema({super.key, this.compacto = false});
+
+  @override
+  Widget build(BuildContext context) {
+    // Detecta se a árvore visual atual está renderizando o tema escuro
+    final isDark = context.isDark;
+
+    // Retorna o botão de ícone sincronizado com o notificador global de tema
+    return IconButton(
+      // Reduz a densidade visual quando posicionado em barras estreitas de celular
+      visualDensity: compacto ? VisualDensity.compact : null,
+      // Ajusta o preenchimento horizontal para não apertar títulos no celular
+      padding: compacto ? const EdgeInsets.symmetric(horizontal: 6) : null,
+      // Limita a área mínima no modo compacto para economizar espaço horizontal
+      constraints: compacto
+          ? const BoxConstraints(minWidth: 34, minHeight: 34)
+          : null,
+      // Exibe sol para voltar ao claro ou lua para ativar o tema escuro
+      icon: Icon(
+        isDark ? Icons.light_mode_outlined : Icons.dark_mode_outlined,
+        size: 21,
+      ),
+      // Texto explicativo exibido ao passar o mouse ou segurar o botão
+      tooltip: isDark ? 'Usar tema claro' : 'Usar tema escuro',
+      // Atualiza o tema globalmente em todas as telas abertas do app
+      onPressed: () {
+        // Notifica o MaterialApp sobre a troca entre claro e escuro
+        MyApp.themeNotifier.value = isDark ? ThemeMode.light : ThemeMode.dark;
       },
     );
   }

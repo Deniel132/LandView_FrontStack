@@ -243,3 +243,82 @@ class EstadoVazio extends StatelessWidget {
     );
   }
 }
+
+/// Cartão modal centralizado de carregamento utilizado enquanto o app consulta dados
+/// detalhados de um calçado na API, evitando cliques repetidos e abertura duplicada de telas.
+class OverlayCarregando extends StatelessWidget {
+  /// Título principal exibido durante a espera (ex: "Abrindo produto...")
+  final String titulo;
+
+  /// Subtítulo complementar explicando a ação em andamento
+  final String subtitulo;
+
+  /// Construtor constante com mensagens padrão para carregamento de produto
+  const OverlayCarregando({
+    super.key,
+    this.titulo = 'Abrindo produto...',
+    this.subtitulo = 'Carregando estoque e grade',
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    // Material garante fonte, tema e elevação corretos sobre diálogos modais
+    return Material(
+      color: Colors.transparent,
+      child: Container(
+        // Largura fixa confortável tanto no celular quanto no desktop
+        width: 240,
+        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 22),
+        decoration: BoxDecoration(
+          // Fundo adaptado ao tema claro ou escuro ativo
+          color: context.cardSurface,
+          borderRadius: BorderRadius.circular(AppTheme.radiusLg),
+          border: Border.all(color: context.hairline),
+          boxShadow: [
+            // Sombra suave para destacar o cartão sobre a tela escurecida
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.28),
+              blurRadius: 24,
+              offset: const Offset(0, 8),
+            ),
+          ],
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // Indicador circular de progresso com a cor de destaque da loja
+            SizedBox(
+              width: 34,
+              height: 34,
+              child: CircularProgressIndicator(
+                strokeWidth: 3,
+                color: context.accent,
+              ),
+            ),
+            const SizedBox(height: 16),
+            // Mensagem principal em negrito
+            Text(
+              titulo,
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 15,
+                fontWeight: FontWeight.w700,
+                color: context.textStrong,
+              ),
+            ),
+            const SizedBox(height: 4),
+            // Mensagem secundária discreta
+            Text(
+              subtitulo,
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 12.5,
+                color: context.textMuted,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}

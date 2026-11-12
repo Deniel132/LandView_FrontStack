@@ -2,8 +2,6 @@
 import 'package:flutter/material.dart';
 // Serviços de plataforma do Flutter (usado para copiar texto para a área de transferência do sistema).
 import 'package:flutter/services.dart';
-// Importação do ponto de entrada do app (acesso ao notificador global de tema claro/escuro MyApp.themeNotifier).
-import '../main.dart';
 // Modelo de dados que encapsula todos os dados agregados do painel da loja.
 import '../models/dashboard.dart';
 // Modelo de dados que representa o registro de auditoria de saída de estoque.
@@ -25,9 +23,11 @@ import '../widgets/logo_loja.dart';
 // Tela de cadastro de novos modelos de calçados.
 import 'cadastro_page.dart';
 // Tela de listagem e catálogo completo de calçados.
-import 'detalhe_page.dart';
-// Tela com informações detalhadas e ações de um calçado específico.
 import 'catalogo_page.dart';
+// Tela com informações detalhadas e ações de um calçado específico.
+import 'detalhe_page.dart';
+// Tela e componente compartilhado de auditoria de saídas de estoque.
+import 'saidas_page.dart';
 
 /// Lista com os nomes dos dias da semana em português para formatação da data no cabeçalho.
 const _diasSemana = [
@@ -60,8 +60,22 @@ const _meses = [
 /// Apresenta uma visão executiva dos números da loja (KPIs), modelos mais vendidos,
 /// alertas de estoque crítico, atalhos rápidos para o provador/catálogo e histórico de saídas.
 class DashboardPage extends StatefulWidget {
-  // Construtor constante com chave opcional de widget.
-  const DashboardPage({super.key});
+  /// Controla se a tela exibe sua própria AppBar superior (falso quando embutida na Navbar principal).
+  final bool mostrarAppBar;
+
+  /// Callback opcional acionado ao tocar no cartão de Catálogo dentro da Navbar principal.
+  final VoidCallback? aoAbrirCatalogo;
+
+  /// Notificador opcional que dispara atualização silenciosa quando o botão Atualizar da Navbar é pressionado.
+  final ValueNotifier<int>? gatilhoAtualizacao;
+
+  // Construtor constante com parâmetros opcionais de integração com a Navbar.
+  const DashboardPage({
+    super.key,
+    this.mostrarAppBar = true,
+    this.aoAbrirCatalogo,
+    this.gatilhoAtualizacao,
+  });
 
   @override
   // Cria o estado mutável associado a esta página.
@@ -74,6 +88,10 @@ class _DashboardPageState extends State<DashboardPage> {
   Dashboard? _dados;
   // Flag que indica se os dados estão sendo requisitados no momento.
   bool _carregando = true;
+  // Flag que trava novos cliques enquanto um modelo ou tela está sendo aberta (evita abrir rotas duplicadas).
+  bool _abrindoModelo = false;
+  // Conjunto de IDs que estão em processo de reposição rápida (+5 un.) para evitar cliques repetidos.
+  final Set<int> _repondoIds = {};
   // Mensagem descritiva de erro caso a requisição falhe e não haja dados prévios.
   String? _erro;
 
@@ -82,8 +100,34 @@ class _DashboardPageState extends State<DashboardPage> {
   void initState() {
     // Executa a inicialização padrão da superclasse.
     super.initState();
+    // Escuta o gatilho de atualização caso a página esteja embutida na Navbar.
+    widget.gatilhoAtualizacao?.addListener(_aoDispararGatilho);
     // Dispara a busca inicial dos dados do painel.
     _carregar();
+  }
+
+  @override
+  // Atualiza o ouvinte caso o notificador recebido por parâmetro seja trocado.
+  void didUpdateWidget(covariant DashboardPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // Remove o ouvinte do notificador antigo e registra no novo.
+    if (oldWidget.gatilhoAtualizacao != widget.gatilhoAtualizacao) {
+      oldWidget.gatilhoAtualizacao?.removeListener(_aoDispararGatilho);
+      widget.gatilhoAtualizacao?.addListener(_aoDispararGatilho);
+    }
+  }
+
+  @override
+  // Remove o ouvinte ao desmontar o widget para evitar vazamento de memória.
+  void dispose() {
+    widget.gatilhoAtualizacao?.removeListener(_aoDispararGatilho);
+    super.dispose();
+  }
+
+  /// Recarrega o painel sempre que a Navbar solicitar atualização.
+  void _aoDispararGatilho() {
+    // Recarrega com feedback visual apenas se ainda não houver dados, caso contrário silenciosamente.
+    _carregar(silencioso: _dados != null);
   }
 
   /// Busca os dados mais recentes do dashboard a partir do ApiService.
@@ -130,35 +174,86 @@ class _DashboardPageState extends State<DashboardPage> {
 
   /// Navega para a tela de catálogo completo e provador virtual.
   Future<void> _abrirCatalogo() async {
-    // Empilha a rota da página CatalogoPage na navegação.
-    await Navigator.of(
-      context,
-    ).push(MaterialPageRoute(builder: (_) => const CatalogoPage()));
-    // Ao retornar do catálogo, recarrega silenciosamente os dados pois o estoque pode ter mudado.
-    if (mounted) _carregar(silencioso: true);
+    // Quando embutido na Navbar principal, apenas troca para a aba Catálogo em vez de empilhar nova tela.
+    if (widget.aoAbrirCatalogo != null) {
+      widget.aoAbrirCatalogo!();
+      return;
+    }
+    // Impede abrir múltiplas instâncias do catálogo em cliques rápidos simultâneos.
+    if (_abrindoModelo) return;
+    // Ativa a trava de navegação durante a abertura do catálogo.
+    _abrindoModelo = true;
+    try {
+      // Empilha a rota da página CatalogoPage na navegação.
+      await Navigator.of(
+        context,
+      ).push(MaterialPageRoute(builder: (_) => const CatalogoPage()));
+      // Ao retornar do catálogo, recarrega silenciosamente os dados pois o estoque pode ter mudado.
+      if (mounted) _carregar(silencioso: true);
+    } finally {
+      // Libera a trava de navegação ao retornar ao painel.
+      _abrindoModelo = false;
+    }
   }
 
   /// Navega para a tela de cadastro de novo modelo de calçado.
   Future<void> _abrirNovoCadastro() async {
-    // Abre a tela de cadastro e aguarda o resultado opcional retornado por ela.
-    final resultado = await Navigator.of(
-      context,
-    ).push<String>(MaterialPageRoute(builder: (_) => const CadastroPage()));
-    // Verifica se a tela continua ativa após a navegação.
-    if (!mounted) return;
-    // Se um texto de sucesso foi retornado pelo cadastro, exibe-o no aviso.
-    if (resultado != null) _avisar(resultado);
-    // Atualiza os dados do painel para incluir o novo calçado recém-criado.
-    _carregar(silencioso: true);
+    // Impede abrir múltiplas instâncias da tela de cadastro em cliques rápidos.
+    if (_abrindoModelo) return;
+    // Ativa a trava de navegação durante a abertura do cadastro.
+    _abrindoModelo = true;
+    try {
+      // Abre a tela de cadastro e aguarda o resultado opcional retornado por ela.
+      final resultado = await Navigator.of(
+        context,
+      ).push<String>(MaterialPageRoute(builder: (_) => const CadastroPage()));
+      // Verifica se a tela continua ativa após a navegação.
+      if (!mounted) return;
+      // Se um texto de sucesso foi retornado pelo cadastro, exibe-o no aviso.
+      if (resultado != null) _avisar(resultado);
+      // Atualiza os dados do painel para incluir o novo calçado recém-criado.
+      _carregar(silencioso: true);
+    } finally {
+      // Libera a trava de navegação ao retornar ao painel.
+      _abrindoModelo = false;
+    }
   }
 
-  /// Chamado ao tocar em um calçado nas listas: busca os detalhes completos na API e abre a tela de detalhe.
+  /// Chamado ao tocar em um calçado nas listas (Mais vendidos, Estoque, Destaques ou Histórico):
+  /// bloqueia cliques repetidos, exibe overlay modal de loading durante a busca na API
+  /// e garante que apenas uma tela de detalhes seja aberta por vez.
   Future<void> _abrirModelo(int id) async {
+    // Se já existe uma abertura ou requisição em andamento, ignora os cliques extras.
+    if (_abrindoModelo) return;
+    // Ativa imediatamente a trava contra múltiplos cliques.
+    _abrindoModelo = true;
+    // Flag local que controla se o overlay de carregamento ainda está visível na pilha.
+    var loadingAberto = true;
+
+    // Exibe diálogo modal de loading bloqueando novos toques atrás enquanto consulta a API.
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      barrierColor: Colors.black54,
+      builder: (_) => const PopScope(
+        canPop: false,
+        child: Center(child: OverlayCarregando()),
+      ),
+    ).whenComplete(() {
+      // Marca o loading como encerrado assim que o diálogo for fechado.
+      loadingAberto = false;
+    });
+
     try {
       // Busca o modelo completo (preço, forma, tabela de tamanhos e estoque atualizado).
       final calcado = await ApiService.instance.buscar(id);
       // Confirma que a tela atual ainda está visível.
       if (!mounted) return;
+      // Fecha o overlay de loading antes de abrir a tela de detalhes do produto.
+      if (loadingAberto) {
+        Navigator.of(context, rootNavigator: true).pop();
+        loadingAberto = false;
+      }
       // Empilha a tela de detalhes passando o objeto Calçado carregado.
       final resultado = await Navigator.of(context).push<String>(
         MaterialPageRoute(builder: (_) => DetalhePage(calcado: calcado)),
@@ -170,14 +265,38 @@ class _DashboardPageState extends State<DashboardPage> {
       // Atualiza os números do painel para refletir qualquer baixa ou edição realizada.
       _carregar(silencioso: true);
     } on ApiException catch (e) {
+      // Fecha o overlay de loading antes de exibir o alerta de erro.
+      if (loadingAberto && mounted) {
+        Navigator.of(context, rootNavigator: true).pop();
+        loadingAberto = false;
+      }
       // Notifica o usuário caso a busca do calçado falhe na rede.
       if (!mounted) return;
       _avisar(e.mensagem);
+    } catch (_) {
+      // Fecha o overlay de loading em caso de erro inesperado de rede ou formato.
+      if (loadingAberto && mounted) {
+        Navigator.of(context, rootNavigator: true).pop();
+        loadingAberto = false;
+      }
+      if (!mounted) return;
+      _avisar('Não foi possível abrir o produto. Tente novamente.');
+    } finally {
+      // Garante que o diálogo nunca fique preso em caso de saída antecipada.
+      if (loadingAberto && mounted) {
+        Navigator.of(context, rootNavigator: true).pop();
+      }
+      // Libera a trava para permitir abrir outro modelo no painel.
+      _abrindoModelo = false;
     }
   }
 
   /// Botão de reposição rápida (+5 unidades) diretamente na linha de estoque baixo.
   Future<void> _reporRapido(ItemDashboard item) async {
+    // Impede múltiplos envios da reposição rápida caso o usuário clique várias vezes seguidas.
+    if (_repondoIds.contains(item.id) || _abrindoModelo) return;
+    // Marca este item como em reposição e atualiza o estado visual do botão.
+    setState(() => _repondoIds.add(item.id));
     try {
       // Busca o registro atual completo do calçado.
       final calcado = await ApiService.instance.buscar(item.id);
@@ -197,6 +316,13 @@ class _DashboardPageState extends State<DashboardPage> {
       // Informa qualquer falha ao tentar atualizar o estoque.
       if (!mounted) return;
       _avisar(e.mensagem);
+    } finally {
+      // Remove o ID da lista de reposição em andamento se a tela ainda estiver montada.
+      if (mounted) {
+        setState(() => _repondoIds.remove(item.id));
+      } else {
+        _repondoIds.remove(item.id);
+      }
     }
   }
 
@@ -251,8 +377,17 @@ class _DashboardPageState extends State<DashboardPage> {
   @override
   // Constrói a estrutura visual principal da tela.
   Widget build(BuildContext context) {
-    // Identifica se o aplicativo está operando sob o tema escuro.
-    final isDark = context.isDark;
+    // Centraliza o conteúdo e impõe largura máxima para visual agradável em telas grandes e navegadores web.
+    final conteudoCentral = Center(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 720),
+        child: _corpo(),
+      ),
+    );
+
+    // Quando embutida na Navbar principal, retorna apenas o conteúdo central sem AppBar duplicada.
+    if (!widget.mostrarAppBar) return conteudoCentral;
+
     // Detecta telas estreitas de celular para compactar espaçamentos da AppBar sem sobrepor textos.
     final telaEstreita = MediaQuery.sizeOf(context).width < 430;
 
@@ -347,28 +482,8 @@ class _DashboardPageState extends State<DashboardPage> {
             tooltip: 'Atualizar painel',
             onPressed: _carregando ? null : () => _carregar(),
           ),
-          // Botão para alternar dinamicamente entre tema claro e escuro.
-          IconButton(
-            // Reduz a densidade visual em telas estreitas de celular.
-            visualDensity: telaEstreita ? VisualDensity.compact : null,
-            // Ajusta o preenchimento horizontal para economizar espaço na AppBar.
-            padding: EdgeInsets.symmetric(horizontal: telaEstreita ? 6 : 8),
-            // Define área mínima compacta em celulares.
-            constraints: telaEstreita
-                ? const BoxConstraints(minWidth: 34, minHeight: 34)
-                : null,
-            icon: Icon(
-              isDark ? Icons.light_mode_outlined : Icons.dark_mode_outlined,
-              size: 21,
-            ),
-            tooltip: isDark ? 'Usar tema claro' : 'Usar tema escuro',
-            onPressed: () {
-              // Notifica o MaterialApp sobre a troca de tema global.
-              MyApp.themeNotifier.value = isDark
-                  ? ThemeMode.light
-                  : ThemeMode.dark;
-            },
-          ),
+          // Botão reutilizável para alternar dinamicamente entre tema claro e escuro.
+          BotaoAlternarTema(compacto: telaEstreita),
           // Avatar do usuário logado com menu suspenso de ações e logout.
           const MarcaAppBar(),
         ],
@@ -378,13 +493,8 @@ class _DashboardPageState extends State<DashboardPage> {
           child: Container(color: context.hairline, height: 1),
         ),
       ),
-      // Centraliza o conteúdo e impõe largura máxima para visual agradável em telas grandes e navegadores web.
-      body: Center(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 720),
-          child: _corpo(),
-        ),
-      ),
+      // Exibe o corpo centralizado dentro do Scaffold próprio.
+      body: conteudoCentral,
     );
   }
 
@@ -426,11 +536,12 @@ class _DashboardPageState extends State<DashboardPage> {
         physics: const AlwaysScrollableScrollPhysics(),
         padding: const EdgeInsets.fromLTRB(16, 18, 16, 32),
         children: [
-          // Cabeçalho com saudação personalizada atualizada pelo notificador de usuário da sessão.
+          // Cabeçalho com saudação personalizada atualizada pelo notificador de usuário da sessão e atalho de cópia.
           ValueListenableBuilder<Usuario?>(
             valueListenable: Sessao.instance.usuarioNotifier,
             builder: (_, u, __) => _Cabecalho(
               nome: (u ?? Sessao.instance.usuario)?.primeiroNome ?? '',
+              aoCopiarResumo: _copiarRelatorio,
             ),
           ),
           const SizedBox(height: 18),
@@ -488,7 +599,11 @@ class _DashboardPageState extends State<DashboardPage> {
                   cor: AppColors.hazard,
                   rotulo: item.estoque == 0 ? 'Esgotado' : 'Acabando',
                   onTap: () => _abrirModelo(item.id),
-                  onRepor: (Sessao.instance.usuario?.podeGerenciarProdutos ?? false)
+                  // Desabilita o botão de reposição rápida enquanto o mesmo item está sendo reposto.
+                  onRepor:
+                      (Sessao.instance.usuario?.podeGerenciarProdutos ??
+                                  false) &&
+                              !_repondoIds.contains(item.id)
                       ? () => _reporRapido(item)
                       : null,
                 ),
@@ -531,7 +646,9 @@ class _DashboardPageState extends State<DashboardPage> {
 class _Cabecalho extends StatelessWidget {
   // Primeiro nome do usuário para saudar amigavelmente.
   final String nome;
-  const _Cabecalho({required this.nome});
+  // Ação opcional para copiar o resumo consolidado do painel diretamente do cabeçalho.
+  final VoidCallback? aoCopiarResumo;
+  const _Cabecalho({required this.nome, this.aoCopiarResumo});
 
   /// Define a saudação conforme o horário atual do dispositivo.
   String get _saudacao {
@@ -549,25 +666,48 @@ class _Cabecalho extends StatelessWidget {
     final data =
         '${_diasSemana[hoje.weekday - 1]}, ${hoje.day} de ${_meses[hoje.month - 1]}';
 
-    return Column(
+    return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // Texto de saudação e nome do usuário com tipografia de destaque.
-        Text(
-          nome.isEmpty ? _saudacao : '$_saudacao, $nome',
-          style: TextStyle(
-            fontSize: 24,
-            fontWeight: FontWeight.w700,
-            letterSpacing: -0.7,
-            color: context.textStrong,
+        // Coluna com saudação e data atual ocupa o espaço principal disponível.
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Texto de saudação e nome do usuário com tipografia de destaque.
+              Text(
+                nome.isEmpty ? _saudacao : '$_saudacao, $nome',
+                style: TextStyle(
+                  fontSize: 24,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: -0.7,
+                  color: context.textStrong,
+                ),
+              ),
+              const SizedBox(height: 6),
+              // Exibe a data atual por extenso.
+              Text(
+                data,
+                style: TextStyle(fontSize: 13.5, color: context.textMuted),
+              ),
+            ],
           ),
         ),
-        const SizedBox(height: 6),
-        // Exibe a data atual por extenso.
-        Text(
-          data,
-          style: TextStyle(fontSize: 13.5, color: context.textMuted),
-        ),
+        // Botão discreto no cabeçalho para copiar o resumo em texto para WhatsApp.
+        if (aoCopiarResumo != null)
+          OutlinedButton.icon(
+            onPressed: aoCopiarResumo,
+            icon: const Icon(Icons.content_copy_rounded, size: 15),
+            label: const Text('Copiar resumo'),
+            style: OutlinedButton.styleFrom(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              minimumSize: const Size(0, 36),
+              textStyle: const TextStyle(
+                fontSize: 12.5,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
       ],
     );
   }
@@ -1512,126 +1652,18 @@ class _ModalHistoricoSaidasState extends State<_ModalHistoricoSaidas> {
             ),
           ),
           Divider(color: context.hairline, height: 1),
-          // Conteúdo rolável do modal (spinner, erro, vazio ou lista).
+          // Conteúdo rolável do modal reutilizando a lista compartilhada de auditoria.
           Expanded(
-            child: _conteudo(context),
+            child: ListaSaidasAuditadas(
+              carregando: _carregando,
+              erro: _erro,
+              saidas: _saidas,
+              aoTentar: _carregar,
+              aoAbrirModelo: widget.aoAbrirModelo,
+            ),
           ),
         ],
       ),
-    );
-  }
-
-  /// Constrói o corpo do modal conforme o estado atual.
-  Widget _conteudo(BuildContext context) {
-    // Se estiver carregando, mostra o indicador circular de progresso.
-    if (_carregando) {
-      return const Center(child: CircularProgressIndicator());
-    }
-    // Se falhou, apresenta mensagem com botão de tentar novamente.
-    if (_erro != null) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(Icons.error_outline_rounded, size: 36, color: AppColors.danger),
-              const SizedBox(height: 10),
-              Text(
-                _erro!,
-                textAlign: TextAlign.center,
-                style: TextStyle(fontSize: 13, color: context.textMuted),
-              ),
-              const SizedBox(height: 14),
-              OutlinedButton(
-                onPressed: _carregar,
-                child: const Text('Tentar novamente'),
-              ),
-            ],
-          ),
-        ),
-      );
-    }
-    // Se a lista estiver vazia, exibe estado neutro ilustrado.
-    if (_saidas.isEmpty) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(Icons.assignment_outlined, size: 36, color: context.textMuted),
-              const SizedBox(height: 10),
-              Text(
-                'Nenhuma saída de estoque registrada ainda.',
-                style: TextStyle(fontSize: 14, color: context.textMuted),
-              ),
-            ],
-          ),
-        ),
-      );
-    }
-
-    // Lista com separadores finos exibindo cada registro de saída retornado.
-    return ListView.separated(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      itemCount: _saidas.length,
-      separatorBuilder: (_, __) => Divider(color: context.hairline, height: 1),
-      itemBuilder: (context, i) {
-        final s = _saidas[i];
-        // Nome do calçado ou ID de fallback caso não esteja no catálogo.
-        final nome = s.nomeProduto ?? 'Produto #${s.idProduto}';
-
-        return ListTile(
-          contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-          // Ícone de saída em vermelho.
-          leading: Container(
-            width: 38,
-            height: 38,
-            decoration: BoxDecoration(
-              color: AppColors.danger.withValues(alpha: 0.12),
-              shape: BoxShape.circle,
-            ),
-            child: Icon(
-              Icons.output_rounded,
-              size: 20,
-              color: AppColors.danger,
-            ),
-          ),
-          // Nome do modelo baixado.
-          title: Text(
-            nome,
-            style: TextStyle(
-              fontSize: 14,
-              fontWeight: FontWeight.w600,
-              color: context.textStrong,
-            ),
-          ),
-          // Identificadores de registro, estoque e usuário responsável pela baixa.
-          subtitle: Text(
-            'Registro #${s.id} · Estoque #${s.idEstoque} · Usuário #${s.idUsuario}',
-            style: TextStyle(fontSize: 11.5, color: context.textMuted),
-          ),
-          // Quantidade reduzida com sinal negativo em destaque.
-          trailing: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-            decoration: BoxDecoration(
-              color: AppColors.danger.withValues(alpha: 0.1),
-              borderRadius: BorderRadius.circular(6),
-            ),
-            child: Text(
-              '-${s.quantidade} un.',
-              style: TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.w700,
-                color: AppColors.danger,
-              ),
-            ),
-          ),
-          // Ao tocar na saída, abre a tela de detalhes do calçado baixado.
-          onTap: () => widget.aoAbrirModelo(s.idProduto),
-        );
-      },
     );
   }
 }
